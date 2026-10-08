@@ -18,16 +18,23 @@
 <p><a href="{{ url_for('contact_new') }}">+ New contact</a></p>
 
 <table class="data-table">
-    <thead><tr><th>Name</th><th>Company</th><th>Title</th></tr></thead>
+    <thead><tr><th>Name</th><th>Company</th><th>Title</th><th>Last contact</th></tr></thead>
     <tbody>
         {% for c in contacts %}
+        {% set f = freshness_by_contact.get(c.id) %}
         <tr>
             <td><a href="{{ url_for('contact_detail', contact_id=c.id) }}">{{ c.name }}</a></td>
             <td>{{ c.company or '' }}</td>
             <td>{{ c.title or '' }}</td>
+            <td>
+                {% if f %}
+                <span class="heat-badge {{ f.css_class }}">{{ f.label }}</span>
+                <span class="muted">{{ f.date }}</span>
+                {% endif %}
+            </td>
         </tr>
         {% else %}
-        <tr><td colspan="3" class="muted">No contacts found.</td></tr>
+        <tr><td colspan="4" class="muted">No contacts found.</td></tr>
         {% endfor %}
     </tbody>
 </table>

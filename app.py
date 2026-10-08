@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import sqlite3
 from datetime import date
@@ -14,6 +15,34 @@ DB_PATH = Path(os.environ.get("CONTEXTS_DB", DEFAULT_DB_PATH))
 
 app = Flask(__name__)
 app.add_template_filter(json.loads, name="from_json")
+
+
+def _freshness(last_contact_str):
+    """Logarithmic recency score from a date/datetime string - purely a
+    visual freshness indicator, never an input to node scoring math."""
+    if not last_contact_str:
+        return None
+    try:
+        last_date = date.fromisoformat(last_contact_str[:10])
+    except ValueError:
+        return None
+    days = max((date.today() - last_date).days, 0)
+    heat = 1 / (1 + math.log10(1 + days))
+    if days <= 14:
+        label, css_class = "Hot", "heat-hot"
+    elif days <= 90:
+        label, css_class = "Warm", "heat-warm"
+    elif days <= 365:
+        label, css_class = "Cooling", "heat-cooling"
+    else:
+        label, css_class = "Cold", "heat-cold"
+    return {
+        "date": last_date.isoformat(),
+        "days": days,
+        "heat": round(heat, 3),
+        "label": label,
+        "css_class": css_class,
+    }
 
 
 def ensure_schema(db):
@@ -145,7 +174,9 @@ def contacts_list():
     node_id = request.args.get("node_id", "").strip()
 
     query = (
-        "SELECT DISTINCT c.* FROM contacts c "
+        "SELECT DISTINCT c.*, "
+        "(SELECT MAX(occurred_at) FROM interactions WHERE contact_id = c.id) AS last_interaction "
+        "FROM contacts c "
         "LEFT JOIN contact_nodes cn ON cn.contact_id = c.id"
     )
     conditions = []
@@ -162,8 +193,16 @@ def contacts_list():
 
     contacts = db.execute(query, params).fetchall()
     nodes = db.execute("SELECT * FROM nodes ORDER BY name").fetchall()
+    freshness_by_contact = {
+        c["id"]: _freshness(c["last_interaction"] or c["created_at"]) for c in contacts
+    }
     return render_template(
-        "contacts_list.html", contacts=contacts, nodes=nodes, q=q, node_id=node_id
+        "contacts_list.html",
+        contacts=contacts,
+        nodes=nodes,
+        q=q,
+        node_id=node_id,
+        freshness_by_contact=freshness_by_contact,
     )
 
 
@@ -302,6 +341,7 @@ def _contact_detail_context(db, contact_id):
             "SELECT * FROM companies WHERE id = ?", (contact["company_id"],)
         ).fetchone()
     all_companies = db.execute("SELECT * FROM companies ORDER BY name").fetchall()
+    last_contact_date = interactions[0]["occurred_at"] if interactions else contact["created_at"]
     return {
         "contact": contact,
         "interactions": interactions,
@@ -313,6 +353,7 @@ def _contact_detail_context(db, contact_id):
         "radar_labels": radar_labels,
         "radar_values": radar_values,
         "radar_unscored": radar_unscored,
+        "freshness": _freshness(last_contact_date),
         "today": date.today().isoformat(),
     }
 
@@ -476,8 +517,22 @@ def suggest_node_scores(contact_id):
     nodes = db.execute("SELECT * FROM nodes ORDER BY name").fetchall()
     profile = json.loads(contact["profile_data"]) if contact["profile_data"] else None
 
+    company = None
+    company_node_scores = None
+    if contact["company_id"] is not None:
+        company = db.execute(
+            "SELECT * FROM companies WHERE id = ?", (contact["company_id"],)
+        ).fetchone()
+        company_node_scores = db.execute(
+            "SELECT n.name, cn.score FROM company_nodes cn "
+            "JOIN nodes n ON n.id = cn.node_id WHERE cn.company_id = ?",
+            (contact["company_id"],),
+        ).fetchall()
+
     try:
-        result = llm.score_contact_nodes(contact, profile, interactions, nodes)
+        result = llm.score_contact_nodes(
+            contact, profile, interactions, nodes, company, company_node_scores
+        )
     except Exception as exc:
         return render_template(
             "contact_detail.html",

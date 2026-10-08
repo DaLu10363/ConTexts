@@ -101,6 +101,20 @@ h1 {
     margin: 0.5rem 0;
 }
 
+.heat-badge {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: white;
+    margin-right: 0.4rem;
+}
+.heat-badge.heat-hot { background: #e34948; }
+.heat-badge.heat-warm { background: #eb6834; }
+.heat-badge.heat-cooling { background: #5598e7; }
+.heat-badge.heat-cold { background: #184f95; }
+
 .stacked-form label {
     display: flex;
     flex-direction: column;

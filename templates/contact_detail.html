@@ -6,6 +6,12 @@
     <h1>{{ contact.name }}</h1>
     <a href="{{ url_for('delete_contact', contact_id=contact.id) }}">Delete contact</a>
 </div>
+{% if freshness %}
+<p class="muted">
+    <span class="heat-badge {{ freshness.css_class }}">{{ freshness.label }}</span>
+    Last contact: {{ freshness.date }} ({{ freshness.days }} day{{ 's' if freshness.days != 1 else '' }} ago)
+</p>
+{% endif %}
 <p class="muted">
     {{ contact.title or '' }}
     {% if contact.title and contact.company %} at {% endif %}

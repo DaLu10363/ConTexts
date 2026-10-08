@@ -128,7 +128,9 @@ def analyze_interaction(
     return response.parsed_output
 
 
-def score_contact_nodes(contact, profile, interactions, nodes) -> NodeScoringResult:
+def score_contact_nodes(
+    contact, profile, interactions, nodes, company=None, company_node_scores=None
+) -> NodeScoringResult:
     profile_text = "(no LinkedIn profile parsed yet)"
     if profile:
         work = "; ".join(
@@ -162,6 +164,27 @@ def score_contact_nodes(contact, profile, interactions, nodes) -> NodeScoringRes
 
     node_defs = "\n".join(f"- {n['name']}: {n['description'] or ''}" for n in nodes)
 
+    company_text = "(not linked to a company record)"
+    if company:
+        company_scores_text = (
+            ", ".join(
+                f"{s['name']}={s['score']}"
+                for s in (company_node_scores or [])
+                if s["score"] is not None
+            )
+            or "(not yet scored)"
+        )
+        company_text = (
+            f"Currently recorded as being at: {company['name']}\n"
+            f"  Company description: {company['description'] or '(none)'}\n"
+            f"  Company's own node scores: {company_scores_text}\n"
+            "  A company's node scores are a weak prior for a contact there, "
+            "not a given - weigh them only if the contact's own work history "
+            "above confirms they are CURRENTLY there (not a past employer), "
+            "and discount or ignore them if the employment looks ended or "
+            "uncertain."
+        )
+
     response = _client().messages.parse(
         model=MODEL,
         max_tokens=2048,
@@ -182,6 +205,7 @@ def score_contact_nodes(contact, profile, interactions, nodes) -> NodeScoringRes
                     f"Contact: {contact['name']}\n"
                     f"Bio: {contact['bio'] or '(none)'}\n\n"
                     f"LinkedIn profile:\n{profile_text}\n\n"
+                    f"Company affiliation:\n{company_text}\n\n"
                     f"Logged interactions:\n{interactions_text}\n\n"
                     f"Classifications to score:\n{node_defs}"
                 ),
