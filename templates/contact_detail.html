@@ -12,6 +12,28 @@
 </ul>
 {% if contact.bio %}<p>{{ contact.bio }}</p>{% endif %}
 
+{% if profile %}
+<section>
+    <h2>LinkedIn profile (parsed {{ contact.profile_parsed_at }})</h2>
+    <h3>Work history</h3>
+    <ul class="plain-list">
+        {% for job in profile.work_history %}
+        <li><strong>{{ job.title }}</strong> at {{ job.company }}
+            {% if job.start or job.end %}<span class="muted"> ({{ job.start or '?' }} – {{ job.end or 'present' }})</span>{% endif %}</li>
+        {% endfor %}
+    </ul>
+    <h3>Education</h3>
+    <ul class="plain-list">
+        {% for edu in profile.education %}
+        <li><strong>{{ edu.school }}</strong>
+            {% if edu.degree %} — {{ edu.degree }}{% endif %}{% if edu.field %}, {{ edu.field }}{% endif %}</li>
+        {% endfor %}
+    </ul>
+    <h3>Skills</h3>
+    <p>{{ profile.skills | join(', ') }}</p>
+</section>
+{% endif %}
+
 <section>
     <h2>Node compatibility</h2>
     <table class="data-table">
@@ -48,11 +70,18 @@
 
 <section>
     <h2>Log a new interaction</h2>
-    <form method="post" action="{{ url_for('add_interaction', contact_id=contact.id) }}" class="stacked-form">
-        <label>Date<input type="date" name="occurred_at" value="{{ today }}"></label>
-        <label>What was discussed<textarea name="summary" rows="3" required></textarea></label>
-        <label>Next steps<textarea name="next_steps" rows="2"></textarea></label>
-        <button type="submit">Add interaction</button>
+    {% if interaction_error %}<p class="error">{{ interaction_error }}</p>{% endif %}
+    <form method="post" action="{{ url_for('review_interaction', contact_id=contact.id) }}" class="stacked-form">
+        <label>Date<input type="date" name="occurred_at" value="{{ pending_interaction.occurred_at if pending_interaction else today }}"></label>
+        <label>What was discussed<textarea name="summary" rows="3" required>{{ pending_interaction.summary if pending_interaction else '' }}</textarea></label>
+        <label>Next steps<textarea name="next_steps" rows="2">{{ pending_interaction.next_steps if pending_interaction else '' }}</textarea></label>
+        <label>Source
+            <select name="source_type">
+                <option value="recalled" {% if pending_interaction and pending_interaction.source_type == 'recalled' %}selected{% endif %}>Recalled from memory</option>
+                <option value="verbatim" {% if pending_interaction and pending_interaction.source_type == 'verbatim' %}selected{% endif %}>Verbatim copy (email/chat)</option>
+            </select>
+        </label>
+        <button type="submit">Analyze &amp; review</button>
     </form>
 </section>
 
@@ -62,8 +91,10 @@
         {% for n in interactions %}
         <li>
             <strong>{{ n.occurred_at }}</strong>
+            <span class="muted"> — {{ n.source_type }}{% if n.tone %}, {{ n.tone }}{% endif %}</span>
             <p>{{ n.summary }}</p>
             {% if n.next_steps %}<p class="muted">Next: {{ n.next_steps }}</p>{% endif %}
+            {% if n.topic_tags %}<p class="muted">Tags: {{ n.topic_tags | from_json | join(', ') }}</p>{% endif %}
         </li>
         {% else %}
         <li class="muted">No interactions logged yet.</li>

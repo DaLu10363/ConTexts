@@ -9,6 +9,9 @@ CREATE TABLE IF NOT EXISTS contacts (
     phone TEXT,
     linkedin_url TEXT,
     bio TEXT,
+    linkedin_raw_text TEXT,
+    profile_data TEXT,
+    profile_parsed_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -36,6 +39,11 @@ CREATE TABLE IF NOT EXISTS interactions (
     occurred_at TEXT NOT NULL,
     summary TEXT NOT NULL,
     next_steps TEXT,
+    source_type TEXT NOT NULL DEFAULT 'recalled',
+    topic_tags TEXT,
+    tone TEXT,
+    analysis_rationale TEXT,
+    analyzed_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

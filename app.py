@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 from datetime import date
@@ -5,11 +6,44 @@ from pathlib import Path
 
 from flask import Flask, g, redirect, render_template, request, url_for
 
+import llm
+
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_DB_PATH = BASE_DIR / "instance" / "contexts.db"
 DB_PATH = Path(os.environ.get("CONTEXTS_DB", DEFAULT_DB_PATH))
 
 app = Flask(__name__)
+app.add_template_filter(json.loads, name="from_json")
+
+
+def ensure_schema(db):
+    contact_cols = {r[1] for r in db.execute("PRAGMA table_info(contacts)").fetchall()}
+    contact_migrations = {
+        "linkedin_raw_text": "ALTER TABLE contacts ADD COLUMN linkedin_raw_text TEXT",
+        "profile_data": "ALTER TABLE contacts ADD COLUMN profile_data TEXT",
+        "profile_parsed_at": "ALTER TABLE contacts ADD COLUMN profile_parsed_at TEXT",
+    }
+    for col, stmt in contact_migrations.items():
+        if col not in contact_cols:
+            db.execute(stmt)
+
+    interaction_cols = {
+        r[1] for r in db.execute("PRAGMA table_info(interactions)").fetchall()
+    }
+    interaction_migrations = {
+        "source_type": (
+            "ALTER TABLE interactions ADD COLUMN source_type TEXT "
+            "NOT NULL DEFAULT 'recalled'"
+        ),
+        "topic_tags": "ALTER TABLE interactions ADD COLUMN topic_tags TEXT",
+        "tone": "ALTER TABLE interactions ADD COLUMN tone TEXT",
+        "analysis_rationale": "ALTER TABLE interactions ADD COLUMN analysis_rationale TEXT",
+        "analyzed_at": "ALTER TABLE interactions ADD COLUMN analyzed_at TEXT",
+    }
+    for col, stmt in interaction_migrations.items():
+        if col not in interaction_cols:
+            db.execute(stmt)
+    db.commit()
 
 
 def get_db():
@@ -24,6 +58,8 @@ def get_db():
         if not has_schema:
             g.db.executescript((BASE_DIR / "schema.sql").read_text())
             g.db.commit()
+        else:
+            ensure_schema(g.db)
     return g.db
 
 
@@ -98,28 +134,106 @@ def contacts_list():
 def contact_new():
     db = get_db()
     if request.method == "POST":
+        action = request.form.get("action", "save")
+        fields = {
+            "name": request.form.get("name", "").strip(),
+            "company": request.form.get("company", "").strip(),
+            "title": request.form.get("title", "").strip(),
+            "email": request.form.get("email", "").strip(),
+            "phone": request.form.get("phone", "").strip(),
+            "linkedin_url": request.form.get("linkedin_url", "").strip(),
+            "bio": request.form.get("bio", "").strip(),
+        }
+        linkedin_text = request.form.get("linkedin_text", "").strip()
+
+        if action == "parse":
+            if not linkedin_text:
+                return render_template(
+                    "contact_form.html",
+                    contact=fields,
+                    linkedin_text=linkedin_text,
+                    error="Paste some LinkedIn profile text first.",
+                )
+            try:
+                profile = llm.parse_linkedin_profile(linkedin_text)
+            except Exception as exc:
+                return render_template(
+                    "contact_form.html",
+                    contact=fields,
+                    linkedin_text=linkedin_text,
+                    error=f"Couldn't parse with Claude: {exc}",
+                )
+            return render_template(
+                "contact_review.html",
+                fields=fields,
+                linkedin_text=linkedin_text,
+                profile=profile,
+                profile_json=profile.model_dump_json(),
+            )
+
+        if not fields["name"]:
+            return render_template(
+                "contact_form.html",
+                contact=fields,
+                linkedin_text=linkedin_text,
+                error="Name is required.",
+            )
+
         db.execute(
-            "INSERT INTO contacts (name, company, title, email, phone, linkedin_url, bio) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO contacts "
+            "(name, company, title, email, phone, linkedin_url, bio, linkedin_raw_text) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                request.form["name"].strip(),
-                request.form.get("company", "").strip() or None,
-                request.form.get("title", "").strip() or None,
-                request.form.get("email", "").strip() or None,
-                request.form.get("phone", "").strip() or None,
-                request.form.get("linkedin_url", "").strip() or None,
-                request.form.get("bio", "").strip() or None,
+                fields["name"],
+                fields["company"] or None,
+                fields["title"] or None,
+                fields["email"] or None,
+                fields["phone"] or None,
+                fields["linkedin_url"] or None,
+                fields["bio"] or None,
+                linkedin_text or None,
             ),
         )
         db.commit()
         contact_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
         return redirect(url_for("contact_detail", contact_id=contact_id))
-    return render_template("contact_form.html", contact=None)
+    return render_template("contact_form.html", contact=None, linkedin_text="")
 
 
-@app.route("/contacts/<int:contact_id>")
-def contact_detail(contact_id):
+@app.route("/contacts/new/confirm", methods=["POST"])
+def contact_new_confirm():
     db = get_db()
+    name = request.form.get("name", "").strip()
+    if not name:
+        return render_template(
+            "contact_form.html",
+            contact=request.form,
+            linkedin_text=request.form.get("linkedin_text", ""),
+            error="Name is required.",
+        )
+    db.execute(
+        "INSERT INTO contacts "
+        "(name, company, title, email, phone, linkedin_url, bio, "
+        "linkedin_raw_text, profile_data, profile_parsed_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+        (
+            name,
+            request.form.get("company", "").strip() or None,
+            request.form.get("title", "").strip() or None,
+            request.form.get("email", "").strip() or None,
+            request.form.get("phone", "").strip() or None,
+            request.form.get("linkedin_url", "").strip() or None,
+            request.form.get("bio", "").strip() or None,
+            request.form.get("linkedin_text", "").strip() or None,
+            request.form.get("profile_json") or None,
+        ),
+    )
+    db.commit()
+    contact_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    return redirect(url_for("contact_detail", contact_id=contact_id))
+
+
+def _contact_detail_context(db, contact_id):
     contact = db.execute(
         "SELECT * FROM contacts WHERE id = ?", (contact_id,)
     ).fetchone()
@@ -139,27 +253,78 @@ def contact_detail(contact_id):
         "WHERE ic.contact_id = ? ORDER BY i.updated_at DESC",
         (contact_id,),
     ).fetchall()
+    profile = json.loads(contact["profile_data"]) if contact["profile_data"] else None
+    return {
+        "contact": contact,
+        "interactions": interactions,
+        "scores": scores,
+        "ideas": ideas,
+        "profile": profile,
+        "today": date.today().isoformat(),
+    }
+
+
+@app.route("/contacts/<int:contact_id>")
+def contact_detail(contact_id):
+    db = get_db()
     return render_template(
-        "contact_detail.html",
-        contact=contact,
-        interactions=interactions,
-        scores=scores,
-        ideas=ideas,
-        today=date.today().isoformat(),
+        "contact_detail.html", **_contact_detail_context(db, contact_id)
     )
 
 
-@app.route("/contacts/<int:contact_id>/interactions", methods=["POST"])
-def add_interaction(contact_id):
+@app.route("/contacts/<int:contact_id>/interactions/review", methods=["POST"])
+def review_interaction(contact_id):
     db = get_db()
+    fields = {
+        "occurred_at": request.form.get("occurred_at") or date.today().isoformat(),
+        "summary": request.form.get("summary", "").strip(),
+        "next_steps": request.form.get("next_steps", "").strip(),
+        "source_type": request.form.get("source_type", "recalled"),
+    }
+    if not fields["summary"]:
+        return redirect(url_for("contact_detail", contact_id=contact_id))
+    try:
+        analysis = llm.analyze_interaction(
+            fields["summary"], fields["next_steps"], fields["source_type"]
+        )
+    except Exception as exc:
+        return render_template(
+            "contact_detail.html",
+            **_contact_detail_context(db, contact_id),
+            interaction_error=f"Couldn't analyze with Claude: {exc}",
+            pending_interaction=fields,
+        )
+    return render_template(
+        "interaction_review.html",
+        contact=db.execute(
+            "SELECT * FROM contacts WHERE id = ?", (contact_id,)
+        ).fetchone(),
+        fields=fields,
+        analysis=analysis,
+        topic_tags_text=", ".join(analysis.topic_tags),
+    )
+
+
+@app.route("/contacts/<int:contact_id>/interactions/confirm", methods=["POST"])
+def confirm_interaction(contact_id):
+    db = get_db()
+    topic_tags = [
+        t.strip() for t in request.form.get("topic_tags", "").split(",") if t.strip()
+    ]
     db.execute(
-        "INSERT INTO interactions (contact_id, occurred_at, summary, next_steps) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO interactions "
+        "(contact_id, occurred_at, summary, next_steps, source_type, "
+        "topic_tags, tone, analysis_rationale, analyzed_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
         (
             contact_id,
             request.form.get("occurred_at") or date.today().isoformat(),
             request.form["summary"].strip(),
             request.form.get("next_steps", "").strip() or None,
+            request.form.get("source_type", "recalled"),
+            json.dumps(topic_tags) if topic_tags else None,
+            request.form.get("tone", "").strip() or None,
+            request.form.get("rationale", "").strip() or None,
         ),
     )
     db.execute(

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Review interaction — ConTexts{% endblock %}
+{% block content %}
+<h1>Review interaction with {{ contact.name }}</h1>
+<p class="muted">Claude's analysis of this note. Check it, edit anything wrong, then save.</p>
+
+<form method="post" action="{{ url_for('confirm_interaction', contact_id=contact.id) }}" class="stacked-form">
+    <label>Date<input type="date" name="occurred_at" value="{{ fields.occurred_at }}"></label>
+    <label>What was discussed<textarea name="summary" rows="3" required>{{ fields.summary }}</textarea></label>
+    <label>Next steps<textarea name="next_steps" rows="2">{{ fields.next_steps }}</textarea></label>
+    <input type="hidden" name="source_type" value="{{ fields.source_type }}">
+
+    <label>Topic tags<input type="text" name="topic_tags" value="{{ topic_tags_text }}"></label>
+    <label>Tone<input type="text" name="tone" value="{{ analysis.tone }}"></label>
+    <label>Rationale<textarea name="rationale" rows="2">{{ analysis.rationale }}</textarea></label>
+
+    <button type="submit">Save interaction</button>
+</form>
+{% endblock %}

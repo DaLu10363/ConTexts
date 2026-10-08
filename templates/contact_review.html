@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Review parsed profile — ConTexts{% endblock %}
+{% block content %}
+<h1>Review parsed profile</h1>
+<p class="muted">Claude extracted the fields below from the pasted text. Check them, edit anything wrong, then save.</p>
+
+<form method="post" action="{{ url_for('contact_new_confirm') }}" class="stacked-form">
+    <label>Name<input type="text" name="name" required value="{{ fields.name or profile.full_name or '' }}"></label>
+    <label>Company<input type="text" name="company" value="{{ fields.company or profile.current_company or '' }}"></label>
+    <label>Title<input type="text" name="title" value="{{ fields.title or profile.current_role or '' }}"></label>
+    <label>Email<input type="email" name="email" value="{{ fields.email }}"></label>
+    <label>Phone<input type="text" name="phone" value="{{ fields.phone }}"></label>
+    <label>LinkedIn URL<input type="url" name="linkedin_url" value="{{ fields.linkedin_url }}"></label>
+    <label>Bio / background<textarea name="bio" rows="4">{{ fields.bio or profile.summary }}</textarea></label>
+
+    <section>
+        <h2>Parsed from LinkedIn (read-only)</h2>
+
+        <h3>Work history</h3>
+        <ul class="plain-list">
+            {% for job in profile.work_history %}
+            <li><strong>{{ job.title }}</strong> at {{ job.company }}
+                {% if job.start or job.end %}<span class="muted"> ({{ job.start or '?' }} – {{ job.end or 'present' }})</span>{% endif %}</li>
+            {% else %}
+            <li class="muted">None found.</li>
+            {% endfor %}
+        </ul>
+
+        <h3>Education</h3>
+        <ul class="plain-list">
+            {% for edu in profile.education %}
+            <li><strong>{{ edu.school }}</strong>
+                {% if edu.degree %} — {{ edu.degree }}{% endif %}{% if edu.field %}, {{ edu.field }}{% endif %}</li>
+            {% else %}
+            <li class="muted">None found.</li>
+            {% endfor %}
+        </ul>
+
+        <h3>Skills</h3>
+        <p>{{ profile.skills | join(', ') if profile.skills else 'None found.' }}</p>
+    </section>
+
+    <input type="hidden" name="linkedin_text" value="{{ linkedin_text }}">
+    <input type="hidden" name="profile_json" value='{{ profile_json }}'>
+    <button type="submit">Save contact</button>
+</form>
+{% endblock %}

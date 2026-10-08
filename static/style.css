@@ -83,6 +83,19 @@ h1 {
     max-width: 500px;
 }
 
+.button-row {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.error {
+    color: #a33;
+    background: #fdecea;
+    border: 1px solid #f5c6cb;
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+}
+
 .stacked-form label {
     display: flex;
     flex-direction: column;
