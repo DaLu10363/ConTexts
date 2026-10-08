@@ -50,3 +50,18 @@ setx CONTEXTS_DB "%LOCALAPPDATA%\ConTexts\contexts.db"
 Set it before running `flask ... init-db` / `flask ... run` so both use the same
 path. The code (this repo) stays synced and versioned; the data stays local and
 untouched by OneDrive.
+
+## Your data never goes to GitHub
+
+`.gitignore` excludes `instance/` and `*.db`, so the SQLite database — your actual
+contacts, interaction notes, node scores, and ideas — is never committed and never
+pushed, regardless of the database's location or whether this repo is public or
+private. Only the application code (this repo's tracked files) goes to GitHub.
+Before ever making the repo public, you can double check no database file was ever
+committed by accident with:
+
+```
+git log --all --full-history -- '*.db'
+```
+
+An empty result confirms none exists in history.
