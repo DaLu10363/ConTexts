@@ -136,3 +136,15 @@ CREATE TABLE IF NOT EXISTS briefings (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Pre-meeting/during-meeting checklist for a briefing, mixing Claude-proposed
+-- and manually-added items. Checked items seed the "Log the outcome" notes.
+CREATE TABLE IF NOT EXISTS briefing_checklist_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    briefing_id INTEGER NOT NULL REFERENCES briefings(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'manual',
+    checked INTEGER NOT NULL DEFAULT 0,
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

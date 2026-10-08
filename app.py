@@ -13,8 +13,15 @@ BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_DB_PATH = BASE_DIR / "instance" / "contexts.db"
 DB_PATH = Path(os.environ.get("CONTEXTS_DB", DEFAULT_DB_PATH))
 
+APP_VERSION = "0.1"
+
 app = Flask(__name__)
 app.add_template_filter(json.loads, name="from_json")
+
+
+@app.context_processor
+def inject_app_version():
+    return {"app_version": APP_VERSION}
 
 
 def _freshness(last_contact_str):
@@ -82,6 +89,14 @@ def ensure_schema(db):
         "interaction_id INTEGER REFERENCES interactions(id) ON DELETE SET NULL, "
         "created_at TEXT NOT NULL DEFAULT (datetime('now')), "
         "updated_at TEXT NOT NULL DEFAULT (datetime('now')))"
+    )
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS briefing_checklist_items ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "briefing_id INTEGER NOT NULL REFERENCES briefings(id) ON DELETE CASCADE, "
+        "text TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'manual', "
+        "checked INTEGER NOT NULL DEFAULT 0, position INTEGER NOT NULL DEFAULT 0, "
+        "created_at TEXT NOT NULL DEFAULT (datetime('now')))"
     )
 
     contact_cols = {r[1] for r in db.execute("PRAGMA table_info(contacts)").fetchall()}
@@ -1418,6 +1433,14 @@ def _briefing_detail_context(db, briefing_id):
         idea = db.execute(
             "SELECT * FROM ideas WHERE id = ?", (briefing["idea_id"],)
         ).fetchone()
+    checklist_items = db.execute(
+        "SELECT * FROM briefing_checklist_items WHERE briefing_id = ? "
+        "ORDER BY position, id",
+        (briefing_id,),
+    ).fetchall()
+    checklist_summary = "\n".join(
+        f"- {i['text']}" for i in checklist_items if i["checked"]
+    )
     return {
         "briefing": briefing,
         "contact": contact,
@@ -1427,6 +1450,8 @@ def _briefing_detail_context(db, briefing_id):
         "talking_points": json.loads(briefing["talking_points"] or "[]"),
         "open_questions": json.loads(briefing["open_questions"] or "[]"),
         "sources": json.loads(briefing["sources"] or "[]"),
+        "checklist_items": checklist_items,
+        "checklist_summary": checklist_summary,
         "today": date.today().isoformat(),
     }
 
@@ -1557,6 +1582,91 @@ def confirm_briefing_outcome(briefing_id):
             interaction_id,
             briefing_id,
         ),
+    )
+    db.commit()
+    return redirect(url_for("briefing_detail", briefing_id=briefing_id))
+
+
+def _next_checklist_position(db, briefing_id):
+    row = db.execute(
+        "SELECT COALESCE(MAX(position), -1) FROM briefing_checklist_items "
+        "WHERE briefing_id = ?",
+        (briefing_id,),
+    ).fetchone()
+    return row[0] + 1
+
+
+@app.route("/briefings/<int:briefing_id>/checklist", methods=["POST"])
+def add_checklist_item(briefing_id):
+    db = get_db()
+    text = request.form.get("text", "").strip()
+    if text:
+        db.execute(
+            "INSERT INTO briefing_checklist_items (briefing_id, text, source, position) "
+            "VALUES (?, ?, 'manual', ?)",
+            (briefing_id, text, _next_checklist_position(db, briefing_id)),
+        )
+        db.commit()
+    return redirect(url_for("briefing_detail", briefing_id=briefing_id))
+
+
+@app.route("/briefings/<int:briefing_id>/checklist/suggest", methods=["POST"])
+def suggest_checklist_items(briefing_id):
+    db = get_db()
+    briefing = db.execute(
+        "SELECT * FROM briefings WHERE id = ?", (briefing_id,)
+    ).fetchone()
+    if briefing is None:
+        abort(404)
+    contact = db.execute(
+        "SELECT * FROM contacts WHERE id = ?", (briefing["contact_id"],)
+    ).fetchone()
+    company = None
+    if contact["company_id"] is not None:
+        company = db.execute(
+            "SELECT * FROM companies WHERE id = ?", (contact["company_id"],)
+        ).fetchone()
+
+    try:
+        items = llm.suggest_briefing_checklist(briefing, contact, company)
+    except Exception as exc:
+        return render_template(
+            "briefing_detail.html",
+            **_briefing_detail_context(db, briefing_id),
+            checklist_error=f"Couldn't suggest a checklist with Claude: {exc}",
+        )
+
+    position = _next_checklist_position(db, briefing_id)
+    for offset, text in enumerate(items):
+        text = text.strip()
+        if text:
+            db.execute(
+                "INSERT INTO briefing_checklist_items (briefing_id, text, source, position) "
+                "VALUES (?, ?, 'claude', ?)",
+                (briefing_id, text, position + offset),
+            )
+    db.commit()
+    return redirect(url_for("briefing_detail", briefing_id=briefing_id))
+
+
+@app.route("/briefings/<int:briefing_id>/checklist/<int:item_id>/toggle", methods=["POST"])
+def toggle_checklist_item(briefing_id, item_id):
+    db = get_db()
+    db.execute(
+        "UPDATE briefing_checklist_items SET checked = 1 - checked "
+        "WHERE id = ? AND briefing_id = ?",
+        (item_id, briefing_id),
+    )
+    db.commit()
+    return redirect(url_for("briefing_detail", briefing_id=briefing_id))
+
+
+@app.route("/briefings/<int:briefing_id>/checklist/<int:item_id>/delete", methods=["POST"])
+def delete_checklist_item(briefing_id, item_id):
+    db = get_db()
+    db.execute(
+        "DELETE FROM briefing_checklist_items WHERE id = ? AND briefing_id = ?",
+        (item_id, briefing_id),
     )
     db.commit()
     return redirect(url_for("briefing_detail", briefing_id=briefing_id))

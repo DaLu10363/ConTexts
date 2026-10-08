@@ -111,6 +111,10 @@ class BriefingOutcomeResult(BaseModel):
     outcome_summary: str
 
 
+class ChecklistSuggestion(BaseModel):
+    items: List[str]
+
+
 class IdeaNodeFitScore(BaseModel):
     node_name: str
     score: int
@@ -646,3 +650,40 @@ def analyze_briefing_outcome(contact, company, briefing, raw_notes) -> BriefingO
         output_format=BriefingOutcomeResult,
     )
     return response.parsed_output
+
+
+def suggest_briefing_checklist(briefing, contact, company) -> List[str]:
+    talking_points = (
+        json.loads(briefing["talking_points"]) if briefing["talking_points"] else []
+    )
+    open_questions = (
+        json.loads(briefing["open_questions"]) if briefing["open_questions"] else []
+    )
+    response = _client().messages.parse(
+        model=MODEL,
+        max_tokens=1024,
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    "Propose a short pre-meeting checklist (4-8 items) for "
+                    "the user to work through during or after this "
+                    "communication. Each item should be a concrete, "
+                    "checkable action or thing to confirm/cover - short "
+                    "enough to read at a glance (under ~12 words), phrased "
+                    "as something you'd tick off (e.g. 'Confirm typical "
+                    "check size'), not an open-ended question to research "
+                    "later. Ground them in the specifics below, not generic "
+                    "meeting advice.\n\n"
+                    f"Contact: {contact['name']}\n"
+                    f"Company: {company['name'] if company else '(none linked)'}\n"
+                    f"Purpose: {briefing['purpose'] or '(unspecified)'}\n"
+                    f"Summary: {briefing['summary'] or '(none)'}\n"
+                    f"Planned talking points: {', '.join(talking_points) or '(none)'}\n"
+                    f"Open questions: {', '.join(open_questions) or '(none)'}"
+                ),
+            }
+        ],
+        output_format=ChecklistSuggestion,
+    )
+    return response.parsed_output.items

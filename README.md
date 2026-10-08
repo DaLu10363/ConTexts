@@ -40,6 +40,29 @@ filtered to that node). Built with D3's force simulation; no data ever
 leaves the browser for this view — it's rendered entirely from your own
 database.
 
+## Briefings
+
+A briefing is prep for an upcoming call or meeting with a contact, tracked
+alongside the rest of the database (the `Briefings` tab).
+
+1. **Create one** — pick the contact (and optionally an Idea it relates to),
+   and state the purpose, format, and date. Claude researches them (your
+   logged history plus a live web search on them and their company) and
+   drafts a summary, contact/company highlights, talking points, and open
+   questions — all editable on the review screen before saving.
+2. **Checklist** — on the briefing's page, before logging the outcome, build
+   a checklist of concrete, checkable items to work through: click "Suggest
+   checklist with Claude" to propose a few grounded in that specific
+   briefing (purpose, talking points, open questions), or add your own.
+   Check items off as you go, or remove any that don't apply.
+3. **Log the outcome** — once the communication happens, describe what came
+   up; checked checklist items are already pulled into the notes as a
+   starting point, so you're editing/adding rather than starting blank.
+   Claude turns this into a logged interaction on the contact and, only
+   where it's actually relevant, proposes an updated company description
+   (e.g. a funding program's deadline they mentioned) — reviewable before
+   saving. The briefing is then marked completed.
+
 ## LLM-assisted classification
 
 Two optional, Claude-assisted flows feed the judgment signal used to score
@@ -58,14 +81,9 @@ contacts against nodes:
   note is a verbatim copy (e.g. from an email) or recalled from memory, then
   Claude proposes topic tags, a tone descriptor, and a short rationale. You
   review and can edit before it's saved.
-- **Briefings** — from the "Briefings" tab, pick a contact, state the purpose
-  of an upcoming communication (optionally linked to an Idea), and Claude
-  drafts contact/company highlights, suggested talking points, and open
-  questions — using your database plus a live web search. After the
-  communication happens, type what came up on the briefing's page and Claude
-  proposes a logged interaction and, where relevant, an updated company
-  description (e.g. a funding program's deadline they mentioned) — again
-  reviewable before saving.
+
+(Briefings also call Claude — for research, the checklist, and outcome
+analysis — covered above.)
 
 All of these calls go through the Anthropic API server-side (see `llm.py`);
 nothing is written to the database until you confirm the review screen.
@@ -162,3 +180,14 @@ git log --all --full-history -- '*.db'
 ```
 
 An empty result confirms none exists in history.
+
+## Version history
+
+The current version is shown at the bottom of every page.
+
+- **v0.1** — First publication. Contacts, Companies, Nodes, Ideas, and
+  Briefings, with Claude-assisted LinkedIn parsing/scoring, interaction
+  analysis, company research, and meeting briefings (each behind a
+  review-before-save screen); a dashboard with a D3 relationship graph;
+  a light/dark (blue-violet) theme with a manual toggle; and breadcrumb
+  navigation.

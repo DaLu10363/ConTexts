@@ -224,6 +224,14 @@ main {
     padding: 2.5rem 1.5rem 4rem;
 }
 
+.site-footer {
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 1.25rem 1.5rem 2rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
 h1 {
     margin: 0 0 0.3rem;
     font-size: 2rem;
@@ -558,6 +566,59 @@ button:disabled {
     font-size: 0.8rem;
     font-weight: 700;
     padding: 0 0.3rem;
+}
+
+.checklist {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1rem;
+}
+
+.checklist-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.checklist-item:last-child {
+    border-bottom: none;
+}
+
+.checklist-toggle-form, .checklist-delete-form {
+    display: contents;
+}
+
+.checklist-item input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+.checklist-text {
+    flex: 1;
+}
+
+.checklist-text.checked {
+    color: var(--text-muted);
+    text-decoration: line-through;
+}
+
+.checklist-source {
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.checklist-remove {
+    min-height: auto;
+    padding: 0.15rem 0.55rem;
+    font-size: 1rem;
+    line-height: 1.2;
 }
 
 .graph-legend {

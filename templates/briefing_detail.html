@@ -56,6 +56,37 @@
 </section>
 {% endif %}
 
+<section class="card">
+    <h2>Checklist</h2>
+    <p class="muted">Pre-defined items Claude proposes, plus anything you add yourself. Checked items are carried into the outcome notes below.</p>
+    {% if checklist_error %}<p class="error">{{ checklist_error }}</p>{% endif %}
+    <ul class="checklist">
+        {% for item in checklist_items %}
+        <li class="checklist-item">
+            <form method="post" action="{{ url_for('toggle_checklist_item', briefing_id=briefing.id, item_id=item.id) }}" class="checklist-toggle-form">
+                <input type="checkbox" onchange="this.form.submit()" {% if item.checked %}checked{% endif %} aria-label="Mark done">
+            </form>
+            <span class="checklist-text {{ 'checked' if item.checked }}">{{ item.text }}</span>
+            {% if item.source == 'claude' %}<span class="muted checklist-source">Claude</span>{% endif %}
+            <form method="post" action="{{ url_for('delete_checklist_item', briefing_id=briefing.id, item_id=item.id) }}" class="checklist-delete-form">
+                <button type="submit" class="btn-ghost checklist-remove" aria-label="Remove item">&times;</button>
+            </form>
+        </li>
+        {% else %}
+        <li class="muted">No checklist items yet.</li>
+        {% endfor %}
+    </ul>
+    <div class="button-row">
+        <form method="post" action="{{ url_for('add_checklist_item', briefing_id=briefing.id) }}" class="button-row">
+            <input type="text" name="text" placeholder="Add a checklist item">
+            <button type="submit" class="btn-ghost">Add</button>
+        </form>
+        <form method="post" action="{{ url_for('suggest_checklist_items', briefing_id=briefing.id) }}">
+            <button type="submit">Suggest checklist with Claude</button>
+        </form>
+    </div>
+</section>
+
 {% if briefing.status == 'completed' %}
 <section class="card">
     <h2>Outcome</h2>
@@ -66,10 +97,10 @@
 {% else %}
 <section class="card">
     <h2>Log the outcome</h2>
-    <p class="muted">After the communication happens, describe what came up. Claude will turn it into a logged interaction, and fold in anything company-level (e.g. a deadline or program) into the company record — reviewable before it saves.</p>
+    <p class="muted">After the communication happens, describe what came up — checked items from the checklist above are already included as a starting point. Claude will turn it into a logged interaction, and fold in anything company-level (e.g. a deadline or program) into the company record — reviewable before it saves.</p>
     {% if outcome_error %}<p class="error">{{ outcome_error }}</p>{% endif %}
     <form method="post" action="{{ url_for('review_briefing_outcome', briefing_id=briefing.id) }}" class="stacked-form">
-        <textarea name="raw_notes" rows="5" required>{{ raw_notes or '' }}</textarea>
+        <textarea name="raw_notes" rows="5" required>{{ raw_notes if raw_notes else checklist_summary }}</textarea>
         <button type="submit">Analyze with Claude</button>
     </form>
 </section>
