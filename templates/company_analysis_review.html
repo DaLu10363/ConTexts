@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}Review analysis for {{ company.name }} — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Companies', url_for('companies_list')), (company.name, url_for('company_detail', company_id=company.id)), ('Review analysis', none)]) }}{% endblock %}
+{% block content %}
+<h1>Review Claude's analysis of {{ company.name }}</h1>
+
+<form method="post" action="{{ url_for('confirm_company_analysis', company_id=company.id) }}">
+    <div class="card stacked-form">
+        <p class="muted">Found via web search — check it, edit anything wrong, then save. This replaces the current description, website, and industry.</p>
+        <label>Industry / sector
+            <select name="industry">
+                <option value="">— select —</option>
+                {% for i in industry_options %}
+                <option value="{{ i }}" {% if industry == i %}selected{% endif %}>{{ i }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Description<textarea name="description" rows="5">{{ description }}</textarea></label>
+        <label>Website<input type="url" name="website" value="{{ website }}"></label>
+    </div>
+
+    <section class="card">
+        <h2>Suggested node compatibility</h2>
+        <p class="muted">Based on the description above and any contacts linked to this company. Edit any score or rationale, or clear a score to skip saving that one.</p>
+        {% if not suggestions %}
+        <p class="error">Claude didn't return any usable suggestions.</p>
+        {% endif %}
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead><tr><th>Node</th><th>Score</th><th>Rationale</th></tr></thead>
+                <tbody>
+                    {% for s in suggestions %}
+                    <tr>
+                        <td>{{ s.node_name }}<input type="hidden" name="node_id" value="{{ s.node_id }}"></td>
+                        <td><input type="number" name="score" min="0" max="100" value="{{ s.score }}" style="width:4em;"></td>
+                        <td><input type="text" name="rationale" value="{{ s.rationale }}" style="width:100%;"></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <button type="submit">Save</button>
+</form>
+{% endblock %}

@@ -1,20 +1,26 @@
 {% extends "base.html" %}
+{% import "_macros.html" as macros %}
 {% block title %}Ideas — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Ideas', none)]) }}{% endblock %}
 {% block content %}
-<h1>Ideas</h1>
-<p><a href="{{ url_for('idea_new') }}">+ New idea</a></p>
-<table class="data-table">
-    <thead><tr><th>Title</th><th>Status</th><th>Updated</th></tr></thead>
-    <tbody>
-        {% for i in ideas %}
-        <tr>
-            <td><a href="{{ url_for('idea_detail', idea_id=i.id) }}">{{ i.title }}</a></td>
-            <td>{{ i.status }}</td>
-            <td>{{ i.updated_at }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="3" class="muted">No ideas yet.</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div class="button-row" style="justify-content: space-between; margin-bottom: 1.5rem;">
+    <h1 style="margin-bottom: 0;">Ideas</h1>
+    <a href="{{ url_for('idea_new') }}" class="btn">+ New idea</a>
+</div>
+<div class="card table-wrap">
+    <table class="data-table">
+        <thead><tr><th>Title</th><th>Status</th><th>Updated</th></tr></thead>
+        <tbody>
+            {% for i in ideas %}
+            <tr>
+                <td><a href="{{ url_for('idea_detail', idea_id=i.id) }}">{{ i.title }}</a></td>
+                <td>{{ i.status }}</td>
+                <td>{{ i.updated_at }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" class="muted">No ideas yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 {% endblock %}

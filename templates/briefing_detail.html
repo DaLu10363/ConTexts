@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}Briefing — {{ contact.name }} — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Briefings', url_for('briefings_list')), (contact.name, none)]) }}{% endblock %}
+{% block content %}
+<div class="button-row" style="justify-content: space-between;">
+    <h1>Briefing: {{ contact.name }}</h1>
+    <a href="{{ url_for('delete_briefing', briefing_id=briefing.id) }}" class="btn-danger">Delete briefing</a>
+</div>
+<p class="muted">
+    <span class="status-tag {{ 'status-completed' if briefing.status == 'completed' else '' }}">{{ briefing.status }}</span>
+    {% if briefing.purpose %} &middot; {{ briefing.purpose }}{% endif %}
+    {% if briefing.format %} &middot; {{ briefing.format }}{% endif %}
+    {% if briefing.scheduled_at %} &middot; {{ briefing.scheduled_at }}{% endif %}
+</p>
+<p><a href="{{ url_for('contact_detail', contact_id=contact.id) }}">{{ contact.name }}</a>
+    {% if idea %} &middot; re: <a href="{{ url_for('idea_detail', idea_id=idea.id) }}">{{ idea.title }}</a>{% endif %}
+</p>
+
+{% if briefing.summary %}<p>{{ briefing.summary }}</p>{% endif %}
+
+<section class="card">
+    <h2>About the contact</h2>
+    <ul class="plain-list">
+        {% for item in contact_highlights %}<li>{{ item }}</li>{% else %}<li class="muted">None.</li>{% endfor %}
+    </ul>
+</section>
+
+<section class="card">
+    <h2>About their company</h2>
+    <ul class="plain-list">
+        {% for item in company_highlights %}<li>{{ item }}</li>{% else %}<li class="muted">None.</li>{% endfor %}
+    </ul>
+</section>
+
+<section class="card">
+    <h2>Suggested talking points / materials</h2>
+    <ul class="plain-list">
+        {% for item in talking_points %}<li>{{ item }}</li>{% else %}<li class="muted">None.</li>{% endfor %}
+    </ul>
+</section>
+
+<section class="card">
+    <h2>Open questions</h2>
+    <ul class="plain-list">
+        {% for item in open_questions %}<li>{{ item }}</li>{% else %}<li class="muted">None.</li>{% endfor %}
+    </ul>
+</section>
+
+{% if sources %}
+<section class="card">
+    <h2>Sources found</h2>
+    <ul class="plain-list">
+        {% for s in sources %}<li><a href="{{ s }}">{{ s }}</a></li>{% endfor %}
+    </ul>
+</section>
+{% endif %}
+
+{% if briefing.status == 'completed' %}
+<section class="card">
+    <h2>Outcome</h2>
+    {% if briefing.outcome_summary %}<p>{{ briefing.outcome_summary }}</p>{% endif %}
+    {% if briefing.outcome_notes %}<p class="muted">Raw notes: {{ briefing.outcome_notes }}</p>{% endif %}
+    {% if briefing.interaction_id %}<p class="muted">Logged as an interaction on this contact's page.</p>{% endif %}
+</section>
+{% else %}
+<section class="card">
+    <h2>Log the outcome</h2>
+    <p class="muted">After the communication happens, describe what came up. Claude will turn it into a logged interaction, and fold in anything company-level (e.g. a deadline or program) into the company record — reviewable before it saves.</p>
+    {% if outcome_error %}<p class="error">{{ outcome_error }}</p>{% endif %}
+    <form method="post" action="{{ url_for('review_briefing_outcome', briefing_id=briefing.id) }}" class="stacked-form">
+        <textarea name="raw_notes" rows="5" required>{{ raw_notes or '' }}</textarea>
+        <button type="submit">Analyze with Claude</button>
+    </form>
+</section>
+{% endif %}
+{% endblock %}

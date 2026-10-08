@@ -1,10 +1,11 @@
 {% extends "base.html" %}
 {% import "_macros.html" as macros %}
 {% block title %}{{ contact.name }} — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Contacts', url_for('contacts_list')), (contact.name, none)]) }}{% endblock %}
 {% block content %}
 <div class="button-row" style="justify-content: space-between;">
     <h1>{{ contact.name }}</h1>
-    <a href="{{ url_for('delete_contact', contact_id=contact.id) }}">Delete contact</a>
+    <a href="{{ url_for('delete_contact', contact_id=contact.id) }}" class="btn-danger">Delete contact</a>
 </div>
 {% if freshness %}
 <p class="muted">
@@ -25,7 +26,7 @@
 </ul>
 {% if contact.bio %}<p>{{ contact.bio }}</p>{% endif %}
 
-<section>
+<section class="card">
     <h2>Company</h2>
     {% if company %}
     <p><a href="{{ url_for('company_detail', company_id=company.id) }}">{{ company.name }}</a></p>
@@ -41,12 +42,12 @@
                 {% endfor %}
             </datalist>
         </label>
-        <button type="submit">Save</button>
+        <button type="submit" class="btn-ghost">Save</button>
     </form>
 </section>
 
 {% if profile %}
-<section>
+<section class="card">
     <h2>LinkedIn profile (parsed {{ contact.profile_parsed_at }})</h2>
     <h3>Work history</h3>
     <ul class="plain-list">
@@ -67,7 +68,7 @@
 </section>
 {% endif %}
 
-<section>
+<section class="card">
     <h2>Node compatibility</h2>
     {% if node_score_error %}<p class="error">{{ node_score_error }}</p>{% endif %}
     {{ macros.radar_chart('node-radar', radar_labels, radar_values, contact.name) }}
@@ -75,30 +76,45 @@
     <p class="muted">Not yet scored (shown as 0): {{ radar_unscored | join(', ') }}</p>
     {% endif %}
     <form method="post" action="{{ url_for('suggest_node_scores', contact_id=contact.id) }}">
-        <button type="submit">Suggest scores with Claude</button>
+        <button type="submit">Fill gaps with Claude</button>
     </form>
-    <table class="data-table">
-        <thead><tr><th>Node</th><th>Score</th><th>Notes</th><th></th></tr></thead>
-        <tbody>
-            {% for s in scores %}
-            {% set form_id = "node-form-" ~ s.id %}
-            <tr>
-                <td>{{ s.name }}</td>
-                <td><input form="{{ form_id }}" type="number" name="score" min="0" max="100" value="{{ s.score if s.score is not none else '' }}" style="width:4em;"></td>
-                <td><input form="{{ form_id }}" type="text" name="notes" value="{{ s.notes or '' }}"></td>
-                <td>
-                    <form id="{{ form_id }}" method="post" action="{{ url_for('set_contact_node', contact_id=contact.id) }}">
-                        <input type="hidden" name="node_id" value="{{ s.id }}">
-                        <button type="submit">Save</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead><tr><th>Node</th><th>Score</th><th>Notes</th><th></th></tr></thead>
+            <tbody>
+                {% for s in scores %}
+                {% set form_id = "node-form-" ~ s.id %}
+                <tr>
+                    <td>{{ s.name }}</td>
+                    <td><input form="{{ form_id }}" type="number" name="score" min="0" max="100" value="{{ s.score if s.score is not none else '' }}" style="width:4em;"></td>
+                    <td><input form="{{ form_id }}" type="text" name="notes" value="{{ s.notes or '' }}"></td>
+                    <td>
+                        <form id="{{ form_id }}" method="post" action="{{ url_for('set_contact_node', contact_id=contact.id) }}">
+                            <input type="hidden" name="node_id" value="{{ s.id }}">
+                            <button type="submit" class="btn-ghost">Save</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </section>
 
-<section>
+<section class="card">
+    <h2>Meeting briefings</h2>
+    <ul class="plain-list">
+        {% for b in briefings %}
+        <li><a href="{{ url_for('briefing_detail', briefing_id=b.id) }}">{{ b.purpose or 'Briefing' }}</a>
+            <span class="muted"> — {{ b.status }}{% if b.scheduled_at %}, {{ b.scheduled_at }}{% endif %}</span></li>
+        {% else %}
+        <li class="muted">None yet.</li>
+        {% endfor %}
+    </ul>
+    <p><a href="{{ url_for('briefing_new') }}">+ New briefing</a></p>
+</section>
+
+<section class="card">
     <h2>Ideas linked to this contact</h2>
     <ul class="plain-list">
         {% for i in ideas %}
@@ -109,7 +125,7 @@
     </ul>
 </section>
 
-<section>
+<section class="card">
     <h2>Log a new interaction</h2>
     {% if interaction_error %}<p class="error">{{ interaction_error }}</p>{% endif %}
     <form method="post" action="{{ url_for('review_interaction', contact_id=contact.id) }}" class="stacked-form">
@@ -126,7 +142,7 @@
     </form>
 </section>
 
-<section>
+<section class="card">
     <h2>Interaction history</h2>
     <ul class="timeline">
         {% for n in interactions %}

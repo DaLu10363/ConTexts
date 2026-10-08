@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}New briefing — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Briefings', url_for('briefings_list')), ('New briefing', none)]) }}{% endblock %}
+{% block content %}
+<h1>Prepare a briefing</h1>
+<p class="muted">Pick who you're about to talk to and why. Claude will pull their history from the database, look up recent public information on them and their company, and draft a briefing for you to review before it's saved.</p>
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<div class="card">
+<form method="post" class="stacked-form">
+    <label>Contact
+        <select name="contact_id" required>
+            <option value="">— select —</option>
+            {% for c in contacts %}
+            <option value="{{ c.id }}" {% if fields and fields.contact_id == c.id|string %}selected{% endif %}>{{ c.name }}{% if c.company %} ({{ c.company }}){% endif %}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <label>Related idea (optional)
+        <select name="idea_id">
+            <option value="">— none —</option>
+            {% for i in ideas %}
+            <option value="{{ i.id }}" {% if fields and fields.idea_id == i.id|string %}selected{% endif %}>{{ i.title }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <label>Purpose — what is this communication about?
+        <textarea name="purpose" rows="2" required>{{ fields.purpose if fields else '' }}</textarea>
+    </label>
+    <label>Format
+        <select name="format">
+            {% set current_format = fields.format if fields else '' %}
+            <option value="meeting" {% if current_format == 'meeting' %}selected{% endif %}>In-person meeting</option>
+            <option value="video call" {% if current_format == 'video call' %}selected{% endif %}>Video call</option>
+            <option value="phone call" {% if current_format == 'phone call' %}selected{% endif %}>Phone call</option>
+            <option value="email" {% if current_format == 'email' %}selected{% endif %}>Email</option>
+            <option value="other" {% if current_format == 'other' %}selected{% endif %}>Other</option>
+        </select>
+    </label>
+    <label>Scheduled for
+        <input type="date" name="scheduled_at" value="{{ fields.scheduled_at if fields else '' }}">
+    </label>
+    <label>Anything specific you want covered (optional)
+        <textarea name="context_notes" rows="3">{{ fields.context_notes if fields else '' }}</textarea>
+    </label>
+    <button type="submit">Generate briefing with Claude</button>
+</form>
+</div>
+{% endblock %}

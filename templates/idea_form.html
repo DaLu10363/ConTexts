@@ -1,17 +1,21 @@
 {% extends "base.html" %}
+{% import "_macros.html" as macros %}
 {% block title %}New idea — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Ideas', url_for('ideas_list')), ('New idea', none)]) }}{% endblock %}
 {% block content %}
 <h1>New idea</h1>
-<form method="post" class="stacked-form">
-    <label>Title<input type="text" name="title" required></label>
-    <label>Description<textarea name="description" rows="4"></textarea></label>
-    <label>Status
-        <select name="status">
-            <option value="active">active</option>
-            <option value="parked">parked</option>
-            <option value="done">done</option>
-        </select>
-    </label>
-    <button type="submit">Save</button>
-</form>
+<div class="card">
+    <form method="post" class="stacked-form">
+        <label>Title<input type="text" name="title" required></label>
+        <label>Description<textarea name="description" rows="4"></textarea></label>
+        <label>Status
+            <select name="status">
+                <option value="active">active</option>
+                <option value="parked">parked</option>
+                <option value="done">done</option>
+            </select>
+        </label>
+        <button type="submit">Save</button>
+    </form>
+</div>
 {% endblock %}

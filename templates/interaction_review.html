@@ -1,9 +1,12 @@
 {% extends "base.html" %}
+{% import "_macros.html" as macros %}
 {% block title %}Review interaction — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Contacts', url_for('contacts_list')), (contact.name, url_for('contact_detail', contact_id=contact.id)), ('Review interaction', none)]) }}{% endblock %}
 {% block content %}
 <h1>Review interaction with {{ contact.name }}</h1>
 <p class="muted">Claude's analysis of this note. Check it, edit anything wrong, then save.</p>
 
+<div class="card">
 <form method="post" action="{{ url_for('confirm_interaction', contact_id=contact.id) }}" class="stacked-form">
     <label>Date<input type="date" name="occurred_at" value="{{ fields.occurred_at }}"></label>
     <label>What was discussed<textarea name="summary" rows="3" required>{{ fields.summary }}</textarea></label>
@@ -16,4 +19,5 @@
 
     <button type="submit">Save interaction</button>
 </form>
+</div>
 {% endblock %}

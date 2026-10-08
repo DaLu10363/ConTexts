@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}Briefings — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Briefings', none)]) }}{% endblock %}
+{% block content %}
+<div class="button-row" style="justify-content: space-between; margin-bottom: 1.5rem;">
+    <h1 style="margin-bottom: 0;">Briefings</h1>
+    <a href="{{ url_for('briefing_new') }}" class="btn">+ New briefing</a>
+</div>
+
+<form method="get" class="filter-bar">
+    <select name="status">
+        <option value="" {% if not status %}selected{% endif %}>Any status</option>
+        <option value="planned" {% if status == 'planned' %}selected{% endif %}>Planned</option>
+        <option value="completed" {% if status == 'completed' %}selected{% endif %}>Completed</option>
+    </select>
+    <button type="submit" class="btn-ghost">Filter</button>
+    <a href="{{ url_for('briefings_list') }}" class="muted">Clear</a>
+</form>
+
+<div class="card table-wrap">
+    <table class="data-table">
+        <thead><tr><th>Contact</th><th>Purpose</th><th>Scheduled</th><th>Status</th></tr></thead>
+        <tbody>
+            {% for b in briefings %}
+            <tr>
+                <td><a href="{{ url_for('briefing_detail', briefing_id=b.id) }}">{{ b.contact_name }}</a></td>
+                <td>{{ b.purpose or '' }}</td>
+                <td>{{ b.scheduled_at or '' }}</td>
+                <td><span class="status-tag {{ 'status-completed' if b.status == 'completed' else '' }}">{{ b.status }}</span></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="muted">No briefings yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

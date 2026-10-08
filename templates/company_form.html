@@ -1,12 +1,24 @@
 {% extends "base.html" %}
+{% import "_macros.html" as macros %}
 {% block title %}New company — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Companies', url_for('companies_list')), ('New company', none)]) }}{% endblock %}
 {% block content %}
 <h1>New company</h1>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
-<form method="post" class="stacked-form">
-    <label>Name<input type="text" name="name" required value="{{ company.name if company else '' }}"></label>
-    <label>Website<input type="url" name="website" value="{{ company.website if company else '' }}"></label>
-    <label>Description<textarea name="description" rows="4">{{ company.description if company else '' }}</textarea></label>
-    <button type="submit">Save</button>
-</form>
+<div class="card">
+    <form method="post" class="stacked-form">
+        <label>Name<input type="text" name="name" required value="{{ company.name if company else '' }}"></label>
+        <label>Website<input type="url" name="website" value="{{ company.website if company else '' }}"></label>
+        <label>Industry / sector
+            <select name="industry">
+                <option value="">— select —</option>
+                {% for i in industry_options %}
+                <option value="{{ i }}" {% if company and company.industry == i %}selected{% endif %}>{{ i }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Description<textarea name="description" rows="4">{{ company.description if company else '' }}</textarea></label>
+        <button type="submit">Save</button>
+    </form>
+</div>
 {% endblock %}

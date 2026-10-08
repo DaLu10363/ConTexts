@@ -3,12 +3,31 @@
 {% block content %}
 <h1>ConTexts</h1>
 <div class="stats">
-    <div class="stat"><span class="num">{{ counts.contacts }}</span> contacts</div>
-    <div class="stat"><span class="num">{{ counts.interactions }}</span> interactions logged</div>
-    <div class="stat"><span class="num">{{ counts.ideas }}</span> ideas</div>
+    <a class="stat" href="{{ url_for('contacts_list') }}"><span class="num">{{ counts.contacts }}</span><span class="label">Contacts</span></a>
+    <a class="stat" href="{{ url_for('companies_list') }}"><span class="num">{{ counts.companies }}</span><span class="label">Companies</span></a>
+    <a class="stat" href="{{ url_for('ideas_list') }}"><span class="num">{{ counts.ideas }}</span><span class="label">Ideas</span></a>
+    <a class="stat" href="{{ url_for('briefings_list') }}"><span class="num">{{ counts.briefings }}</span><span class="label">Briefings</span></a>
+    <div class="stat"><span class="num">{{ counts.interactions }}</span><span class="label">Interactions logged</span></div>
 </div>
 
-<section>
+<section class="card">
+    <h2>Relationship graph</h2>
+    <p class="muted">Nodes are your role classifications (always labeled); contacts and companies connect to the ones they're scored against — the closer, the better the fit. A dotted line between a contact and a company means they currently work there. Hover a contact or company for its name, click any point to open it.</p>
+    <div class="graph-legend">
+        <span><span class="dot dot-node"></span>Node</span>
+        <span><span class="dot dot-company"></span>Company</span>
+        <span><span class="dot dot-contact"></span>Contact</span>
+    </div>
+    <div class="graph-wrap" id="graph-wrap">
+        <svg id="relationship-graph" aria-label="Relationship graph of nodes, contacts, and companies"></svg>
+        <div id="graph-tooltip" class="graph-tooltip" hidden></div>
+        {% if not graph.nodes %}
+        <div class="graph-empty">Nothing to show yet — add contacts, companies, and score them against your nodes.</div>
+        {% endif %}
+    </div>
+</section>
+
+<section class="card">
     <h2>Recently updated contacts</h2>
     <ul class="plain-list">
         {% for c in contacts %}
@@ -20,7 +39,7 @@
     </ul>
 </section>
 
-<section>
+<section class="card">
     <h2>Active ideas</h2>
     <ul class="plain-list">
         {% for i in ideas %}
@@ -30,4 +49,177 @@
         {% endfor %}
     </ul>
 </section>
+
+{% if graph.nodes %}
+<script>
+(function () {
+    var data = {{ graph | tojson }};
+    var wrap = document.getElementById('graph-wrap');
+    var tooltip = document.getElementById('graph-tooltip');
+    var svg = d3.select('#relationship-graph');
+
+    var palette = {
+        light: { node: '#2a78d6', company: '#eb6834', contact: '#1baf7a', edge: '#d4d4d4', edgeStrong: '#6b6b6b', ring: '#ffffff', hoverRing: '#0a0a0a', text: '#0a0a0a' },
+        dark:  { node: '#8b7cf6', company: '#d95926', contact: '#199e70', edge: 'rgba(180, 165, 230, 0.28)', edgeStrong: '#9792b3', ring: '#1a1730', hoverRing: '#f4f2fb', text: '#f4f2fb' }
+    };
+    var mql = window.matchMedia('(prefers-color-scheme: dark)');
+
+    function isDark() {
+        var attr = document.documentElement.getAttribute('data-theme');
+        if (attr === 'light') return false;
+        if (attr === 'dark') return true;
+        return mql.matches;
+    }
+
+    function colors() {
+        return isDark() ? palette.dark : palette.light;
+    }
+
+    function colorFor(type) {
+        var c = colors();
+        if (type === 'node') return c.node;
+        if (type === 'company') return c.company;
+        return c.contact;
+    }
+
+    function radiusFor(type) {
+        return type === 'node' ? 9 : 5.5;
+    }
+
+    var width = wrap.clientWidth;
+    var height = wrap.clientHeight;
+    svg.attr('viewBox', [0, 0, width, height]);
+
+    var g = svg.append('g');
+    svg.call(d3.zoom().scaleExtent([0.35, 3]).on('zoom', function (event) {
+        g.attr('transform', event.transform);
+    }));
+
+    // Employment is a known-certain, tight relationship: short, fixed
+    // distance, independent of any score. Score-based edges span a wide
+    // range so the fit is actually legible in the layout, not swamped by
+    // general node repulsion.
+    var links = data.links.map(function (l) {
+        var distance = l.kind === 'employment' ? 45 : 320 - (l.score || 0) * 2.4;
+        return Object.assign({}, l, { distance: distance });
+    });
+
+    var simulation = d3.forceSimulation(data.nodes)
+        .force('link', d3.forceLink(links).id(function (d) { return d.id; })
+            .distance(function (d) { return d.distance; })
+            .strength(function (d) { return d.kind === 'employment' ? 1 : 0.95; }))
+        .force('charge', d3.forceManyBody().strength(-70).distanceMax(380))
+        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force('collide', d3.forceCollide(function (d) { return radiusFor(d.type) + 8; }));
+
+    var link = g.append('g')
+        .selectAll('line')
+        .data(links)
+        .join('line')
+        .attr('stroke-width', function (d) {
+            return d.kind === 'employment' ? 1.5 : 1 + (d.score || 0) / 100 * 1.2;
+        })
+        .attr('stroke-dasharray', function (d) { return d.kind === 'employment' ? '2,3' : null; })
+        .attr('stroke-linecap', 'round');
+
+    var nodeGroup = g.append('g')
+        .selectAll('g')
+        .data(data.nodes)
+        .join('g')
+        .style('cursor', 'pointer');
+
+    nodeGroup.append('circle')
+        .attr('class', 'hit')
+        .attr('r', 13)
+        .attr('fill', 'transparent');
+
+    nodeGroup.append('circle')
+        .attr('class', 'mark')
+        .attr('r', function (d) { return radiusFor(d.type); })
+        .attr('stroke-width', 2);
+
+    // Nodes (the base role classifications) are always labeled - they're
+    // the few, important orientation points. Contacts/companies stay
+    // hover-only so the graph doesn't drown in text.
+    var nodeLabel = nodeGroup.filter(function (d) { return d.type === 'node'; })
+        .append('text')
+        .attr('class', 'node-label')
+        .attr('x', 13)
+        .attr('y', 4)
+        .attr('font-size', 11)
+        .attr('font-weight', 600)
+        .attr('paint-order', 'stroke')
+        .attr('stroke-width', 3)
+        .attr('stroke-linejoin', 'round')
+        .style('pointer-events', 'none')
+        .text(function (d) { return d.label; });
+
+    function applyColors() {
+        var c = colors();
+        link
+            .attr('stroke', function (d) { return d.kind === 'employment' ? c.edgeStrong : c.edge; })
+            .attr('stroke-opacity', function (d) {
+                return d.kind === 'employment' ? 0.8 : 0.3 + (d.score || 0) / 100 * 0.35;
+            });
+        nodeGroup.select('circle.mark')
+            .attr('fill', function (d) { return colorFor(d.type); })
+            .attr('stroke', c.ring);
+        nodeLabel
+            .attr('fill', c.text)
+            .attr('stroke', c.ring);
+    }
+    applyColors();
+
+    nodeGroup
+        .on('mouseenter', function (event, d) {
+            tooltip.textContent = d.label;
+            tooltip.hidden = false;
+            d3.select(this).select('circle.mark').attr('stroke', colors().hoverRing);
+        })
+        .on('mousemove', function (event) {
+            var rect = wrap.getBoundingClientRect();
+            tooltip.style.left = (event.clientX - rect.left) + 'px';
+            tooltip.style.top = (event.clientY - rect.top) + 'px';
+        })
+        .on('mouseleave', function () {
+            tooltip.hidden = true;
+            d3.select(this).select('circle.mark').attr('stroke', colors().ring);
+        })
+        .on('click', function (event, d) {
+            window.location.href = d.url;
+        })
+        .call(d3.drag()
+            .on('start', function (event, d) {
+                if (!event.active) simulation.alphaTarget(0.25).restart();
+                d.fx = d.x; d.fy = d.y;
+            })
+            .on('drag', function (event, d) {
+                d.fx = event.x; d.fy = event.y;
+            })
+            .on('end', function (event, d) {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null; d.fy = null;
+            }));
+
+    simulation.on('tick', function () {
+        link
+            .attr('x1', function (d) { return d.source.x; })
+            .attr('y1', function (d) { return d.source.y; })
+            .attr('x2', function (d) { return d.target.x; })
+            .attr('y2', function (d) { return d.target.y; });
+        nodeGroup.attr('transform', function (d) { return 'translate(' + d.x + ',' + d.y + ')'; });
+    });
+
+    window.addEventListener('resize', function () {
+        width = wrap.clientWidth;
+        height = wrap.clientHeight;
+        svg.attr('viewBox', [0, 0, width, height]);
+        simulation.force('center', d3.forceCenter(width / 2, height / 2)).alpha(0.3).restart();
+    });
+
+    mql.addEventListener('change', applyColors);
+    window.addEventListener('contexts-theme-change', applyColors);
+})();
+</script>
+{% endif %}
 {% endblock %}

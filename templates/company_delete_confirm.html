@@ -1,5 +1,7 @@
 {% extends "base.html" %}
+{% import "_macros.html" as macros %}
 {% block title %}Delete {{ company.name }} — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Companies', url_for('companies_list')), (company.name, url_for('company_detail', company_id=company.id)), ('Delete', none)]) }}{% endblock %}
 {% block content %}
 <h1>Delete {{ company.name }}?</h1>
 <p class="error">This permanently deletes this company and cannot be undone. It will also:</p>
@@ -8,7 +10,7 @@
     <li>Delete {{ counts.node_scores }} node score{{ 's' if counts.node_scores != 1 else '' }}</li>
 </ul>
 <form method="post" class="button-row">
-    <button type="submit">Yes, delete permanently</button>
-    <a href="{{ url_for('company_detail', company_id=company.id) }}"><button type="button">Cancel</button></a>
+    <button type="submit" class="btn-danger">Yes, delete permanently</button>
+    <a href="{{ url_for('company_detail', company_id=company.id) }}" class="btn-ghost">Cancel</a>
 </form>
 {% endblock %}

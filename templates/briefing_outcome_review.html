@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}Review outcome — {{ contact.name }} — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Briefings', url_for('briefings_list')), (contact.name, url_for('briefing_detail', briefing_id=briefing.id)), ('Log outcome', none)]) }}{% endblock %}
+{% block content %}
+<h1>Review outcome for {{ contact.name }}</h1>
+<p class="muted">Check and edit before saving. This will log a new interaction{% if company %}, and update {{ company.name }}'s description if you keep the company update below{% endif %}.</p>
+
+<div class="card">
+<form method="post" action="{{ url_for('confirm_briefing_outcome', briefing_id=briefing.id) }}" class="stacked-form">
+    <input type="hidden" name="raw_notes" value="{{ raw_notes }}">
+
+    <label>Date<input type="date" name="occurred_at" value="{{ today }}"></label>
+    <label>What happened<textarea name="summary" rows="3">{{ result.interaction_summary }}</textarea></label>
+    <label>Next steps<textarea name="next_steps" rows="2">{{ result.interaction_next_steps or '' }}</textarea></label>
+    <label>Tone<input type="text" name="tone" value="{{ result.interaction_tone }}"></label>
+    <label>Tags (comma-separated)<input type="text" name="tags" value="{{ tags_text }}"></label>
+
+    {% if company %}
+    <label>Update {{ company.name }}'s description (clear this to skip updating the company)
+        <textarea name="company_update" rows="4">{{ result.company_update or '' }}</textarea>
+    </label>
+    {% else %}
+    <input type="hidden" name="company_update" value="">
+    {% endif %}
+
+    <label>Briefing outcome summary<textarea name="outcome_summary" rows="2">{{ result.outcome_summary }}</textarea></label>
+
+    <button type="submit">Save outcome</button>
+</form>
+</div>
+{% endblock %}

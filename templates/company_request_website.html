@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}Website needed — {{ company.name }} — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Companies', url_for('companies_list')), (company.name, url_for('company_detail', company_id=company.id)), ('Website needed', none)]) }}{% endblock %}
+{% block content %}
+<h1>What's {{ company.name }}'s website?</h1>
+<p class="muted">There could be more than one company called "{{ company.name }}" — Claude needs a website to anchor the search instead of guessing. Give it one and it'll research and score together.</p>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<div class="card">
+    <form method="post" action="{{ url_for('analyze_company_with_website', company_id=company.id) }}" class="stacked-form">
+        <label>Website<input type="url" name="website" placeholder="https://..." required autofocus></label>
+        <div class="button-row">
+            <button type="submit">Continue</button>
+            <a href="{{ url_for('company_detail', company_id=company.id) }}" class="btn-ghost">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

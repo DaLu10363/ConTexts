@@ -2,21 +2,79 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script>
+    (function () {
+        try {
+            var t = localStorage.getItem('contexts-theme');
+            if (t === 'light' || t === 'dark') {
+                document.documentElement.setAttribute('data-theme', t);
+            }
+        } catch (e) {}
+    })();
+    </script>
     <title>{% block title %}ConTexts{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 </head>
 <body>
     <nav class="topnav">
-        <a href="{{ url_for('index') }}" class="brand">ConTexts</a>
-        <a href="{{ url_for('contacts_list') }}">Contacts</a>
-        <a href="{{ url_for('companies_list') }}">Companies</a>
-        <a href="{{ url_for('nodes_list') }}">Nodes</a>
-        <a href="{{ url_for('ideas_list') }}">Ideas</a>
+        <a href="{{ url_for('index') }}" class="brand"><span class="logo-mark" aria-hidden="true">[&middot;&mdash;&middot;]</span>ConTexts</a>
+        <a href="{{ url_for('contacts_list') }}" class="{{ 'active' if request.path.startswith('/contacts') else '' }}">Contacts</a>
+        <a href="{{ url_for('companies_list') }}" class="{{ 'active' if request.path.startswith('/companies') else '' }}">Companies</a>
+        <a href="{{ url_for('nodes_list') }}" class="{{ 'active' if request.path.startswith('/nodes') else '' }}">Nodes</a>
+        <a href="{{ url_for('ideas_list') }}" class="{{ 'active' if request.path.startswith('/ideas') else '' }}">Ideas</a>
+        <a href="{{ url_for('briefings_list') }}" class="{{ 'active' if request.path.startswith('/briefings') else '' }}">Briefings</a>
+        <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">
+            <svg id="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <circle cx="12" cy="12" r="4.5"></circle>
+                <path d="M12 2.5v2.5M12 19v2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M2.5 12h2.5M19 12h2.5M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"></path>
+            </svg>
+            <svg id="icon-moon" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="9" fill="currentColor"></circle>
+                <circle cx="16" cy="9" r="7.5" fill="var(--bg)"></circle>
+            </svg>
+        </button>
     </nav>
+    {% block breadcrumbs %}{% endblock %}
     <main>
         {% block content %}{% endblock %}
     </main>
     {% block scripts %}{% endblock %}
+    <script>
+    (function () {
+        var toggle = document.getElementById('theme-toggle');
+        var sun = document.getElementById('icon-sun');
+        var moon = document.getElementById('icon-moon');
+        var mql = window.matchMedia('(prefers-color-scheme: dark)');
+
+        function currentTheme() {
+            var attr = document.documentElement.getAttribute('data-theme');
+            if (attr === 'light' || attr === 'dark') return attr;
+            return mql.matches ? 'dark' : 'light';
+        }
+
+        function updateIcon() {
+            var isDark = currentTheme() === 'dark';
+            sun.style.display = isDark ? 'block' : 'none';
+            moon.style.display = isDark ? 'none' : 'block';
+            toggle.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode');
+        }
+
+        toggle.addEventListener('click', function () {
+            var next = currentTheme() === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            try { localStorage.setItem('contexts-theme', next); } catch (e) {}
+            updateIcon();
+            window.dispatchEvent(new Event('contexts-theme-change'));
+        });
+
+        updateIcon();
+    })();
+    </script>
 </body>
 </html>

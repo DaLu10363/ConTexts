@@ -1,24 +1,28 @@
 {% extends "base.html" %}
+{% import "_macros.html" as macros %}
 {% block title %}New contact — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Contacts', url_for('contacts_list')), ('New contact', none)]) }}{% endblock %}
 {% block content %}
 <h1>New contact</h1>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
-<form method="post" class="stacked-form">
-    <label>Name<input type="text" name="name" required value="{{ contact.name if contact else '' }}"></label>
-    <label>Company<input type="text" name="company" value="{{ contact.company if contact else '' }}"></label>
-    <label>Title<input type="text" name="title" value="{{ contact.title if contact else '' }}"></label>
-    <label>Email<input type="email" name="email" value="{{ contact.email if contact else '' }}"></label>
-    <label>Phone<input type="text" name="phone" value="{{ contact.phone if contact else '' }}"></label>
-    <label>LinkedIn URL<input type="url" name="linkedin_url" value="{{ contact.linkedin_url if contact else '' }}"></label>
-    <label>Bio / background<textarea name="bio" rows="4">{{ contact.bio if contact else '' }}</textarea></label>
+<div class="card">
+    <form method="post" class="stacked-form">
+        <label>Name<input type="text" name="name" required value="{{ contact.name if contact else '' }}"></label>
+        <label>Company<input type="text" name="company" value="{{ contact.company if contact else '' }}"></label>
+        <label>Title<input type="text" name="title" value="{{ contact.title if contact else '' }}"></label>
+        <label>Email<input type="email" name="email" value="{{ contact.email if contact else '' }}"></label>
+        <label>Phone<input type="text" name="phone" value="{{ contact.phone if contact else '' }}"></label>
+        <label>LinkedIn URL<input type="url" name="linkedin_url" value="{{ contact.linkedin_url if contact else '' }}"></label>
+        <label>Bio / background<textarea name="bio" rows="4">{{ contact.bio if contact else '' }}</textarea></label>
 
-    <label>Paste LinkedIn profile text (optional)
-        <textarea name="linkedin_text" rows="8" placeholder="Open their LinkedIn profile, expand any 'see more' sections, select all, and paste here.">{{ linkedin_text or '' }}</textarea>
-    </label>
+        <label>Paste LinkedIn profile text (optional)
+            <textarea name="linkedin_text" rows="8" placeholder="Open their LinkedIn profile, expand any 'see more' sections, select all, and paste here.">{{ linkedin_text or '' }}</textarea>
+        </label>
 
-    <div class="button-row">
-        <button type="submit" name="action" value="save">Save contact</button>
-        <button type="submit" name="action" value="parse">Parse LinkedIn text with Claude</button>
-    </div>
-</form>
+        <div class="button-row">
+            <button type="submit" name="action" value="save">Save contact</button>
+            <button type="submit" name="action" value="parse" class="btn-ghost">Parse LinkedIn text with Claude</button>
+        </div>
+    </form>
+</div>
 {% endblock %}

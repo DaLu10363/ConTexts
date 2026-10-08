@@ -1,5 +1,7 @@
 {% extends "base.html" %}
+{% import "_macros.html" as macros %}
 {% block title %}Delete {{ contact.name }} — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Contacts', url_for('contacts_list')), (contact.name, url_for('contact_detail', contact_id=contact.id)), ('Delete', none)]) }}{% endblock %}
 {% block content %}
 <h1>Delete {{ contact.name }}?</h1>
 <p class="error">This permanently deletes this contact and cannot be undone. It will also delete:</p>
@@ -9,7 +11,7 @@
     <li>{{ counts.ideas }} idea link{{ 's' if counts.ideas != 1 else '' }}</li>
 </ul>
 <form method="post" class="button-row">
-    <button type="submit">Yes, delete permanently</button>
-    <a href="{{ url_for('contact_detail', contact_id=contact.id) }}"><button type="button">Cancel</button></a>
+    <button type="submit" class="btn-danger">Yes, delete permanently</button>
+    <a href="{{ url_for('contact_detail', contact_id=contact.id) }}" class="btn-ghost">Cancel</a>
 </form>
 {% endblock %}

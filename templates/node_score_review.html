@@ -1,5 +1,7 @@
 {% extends "base.html" %}
+{% import "_macros.html" as macros %}
 {% block title %}Review node scores — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Contacts', url_for('contacts_list')), (subject_name, url_for('contact_detail', contact_id=contact_id)), ('Suggest scores', none)]) }}{% endblock %}
 {% block content %}
 <h1>Review suggested scores for {{ subject_name }}</h1>
 <p class="muted">{{ basis_text }} Edit any score or rationale, or clear a score to skip saving that one, then confirm.</p>
@@ -8,19 +10,21 @@
 <p class="error">Claude didn't return any usable suggestions.</p>
 {% endif %}
 
-<form method="post" action="{{ confirm_url }}" class="stacked-form">
-    <table class="data-table">
-        <thead><tr><th>Node</th><th>Score</th><th>Rationale</th></tr></thead>
-        <tbody>
-            {% for s in suggestions %}
-            <tr>
-                <td>{{ s.node_name }}<input type="hidden" name="node_id" value="{{ s.node_id }}"></td>
-                <td><input type="number" name="score" min="0" max="100" value="{{ s.score }}" style="width:4em;"></td>
-                <td><input type="text" name="rationale" value="{{ s.rationale }}" style="width:100%;"></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+<form method="post" action="{{ confirm_url }}">
+    <div class="card table-wrap">
+        <table class="data-table">
+            <thead><tr><th>Node</th><th>Score</th><th>Rationale</th></tr></thead>
+            <tbody>
+                {% for s in suggestions %}
+                <tr>
+                    <td>{{ s.node_name }}<input type="hidden" name="node_id" value="{{ s.node_id }}"></td>
+                    <td><input type="number" name="score" min="0" max="100" value="{{ s.score }}" style="width:4em;"></td>
+                    <td><input type="text" name="rationale" value="{{ s.rationale }}" style="width:100%;"></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
     <button type="submit">Save scores</button>
 </form>
 {% endblock %}

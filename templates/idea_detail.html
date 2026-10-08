@@ -1,23 +1,25 @@
 {% extends "base.html" %}
+{% import "_macros.html" as macros %}
 {% block title %}{{ idea.title }} — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Ideas', url_for('ideas_list')), (idea.title, none)]) }}{% endblock %}
 {% block content %}
 <h1>{{ idea.title }}</h1>
 <p class="muted">Status: {{ idea.status }}</p>
 {% if idea.description %}<p>{{ idea.description }}</p>{% endif %}
 
-<section>
+<section class="card">
     <h2>Linked contacts</h2>
     <ul class="plain-list">
         {% for c in linked_contacts %}
         <li><a href="{{ url_for('contact_detail', contact_id=c.id) }}">{{ c.name }}</a>
-            {% if c.fit_score is not none %}<strong> — fit: {{ c.fit_score }}/100</strong>{% endif %}
+            {% if c.fit_score is not none %} — fit: {{ macros.score_cell(c.fit_score) }}/100{% endif %}
             {% if c.role_note %}<span class="muted"> — {{ c.role_note }}</span>{% endif %}
             {% if c.fit_rationale %}<p class="muted">{{ c.fit_rationale }}</p>{% endif %}
             {% set ns_list = node_scores_by_contact.get(c.id) %}
             {% if ns_list %}
             <ul class="plain-list" style="margin-left: 1.5rem;">
                 {% for ns in ns_list %}
-                <li class="muted">{{ ns.node_name }} (for this idea): {{ ns.score }}/100 — {{ ns.rationale }}</li>
+                <li class="muted">{{ ns.node_name }} (for this idea): {{ macros.score_cell(ns.score) }}/100 — {{ ns.rationale }}</li>
                 {% endfor %}
             </ul>
             {% endif %}
@@ -36,16 +38,16 @@
             </select>
         </label>
         <label>Role / note<input type="text" name="role_note"></label>
-        <button type="submit">Link contact</button>
+        <button type="submit" class="btn-ghost">Link contact</button>
     </form>
 </section>
 
-<section>
+<section class="card">
     <h2>Values/domain fit across all contacts</h2>
     {% if fit_error %}<p class="error">{{ fit_error }}</p>{% endif %}
     <p class="muted">Scores every contact in your database against this idea's domain and values — not just general role fit. Useful for surfacing a mismatch, e.g. a social-justice-focused investor being a poor fit for a defense/weapons idea even if they score well as "Investor".</p>
     <form method="post" action="{{ url_for('suggest_idea_fit', idea_id=idea.id) }}">
-        <button type="submit">Suggest contact fit with Claude</button>
+        <button type="submit">Fill gaps with Claude</button>
     </form>
 </section>
 {% endblock %}

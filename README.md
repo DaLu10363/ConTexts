@@ -7,6 +7,10 @@ here is shared — it's a private memory layer for your own network.
 ## Data model
 
 - **Contacts** — people you know: name, company, title, contact info, bio.
+- **Companies** — the organizations your contacts work at: name, website,
+  industry/sector (picked from a fixed list, also proposed by Claude via
+  "Fill gaps with Claude"), description. Scored against Nodes the same way
+  contacts are.
 - **Nodes** — role classifications a contact can qualify for (e.g. Investor,
   Supplier, Cofounder, Consultant, Contributor/Contractor). Each contact gets a
   0-100 compatibility score per node, so one person can score well as both a
@@ -16,6 +20,25 @@ here is shared — it's a private memory layer for your own network.
   profile as a timeline.
 - **Ideas** — business or project ideas, linked to the contacts relevant to
   pursuing them.
+- **Briefings** — meeting/communication prep, parallel to the rest of the
+  database. You pick a contact and describe the purpose of an upcoming
+  communication; Claude researches them (your logged history plus a web
+  search on them and their company) and drafts a reviewable briefing. After
+  the communication happens, you log what came up and Claude turns it into a
+  logged interaction, folding anything company-level into the company record.
+
+## Dashboard
+
+The landing page (`/`) has clickable counts for Contacts, Companies, Ideas,
+and Briefings (jumps to that list), plus a **relationship graph**: your Nodes
+as hub points, with Contacts and Companies connected to whichever Nodes
+they're scored against — a closer/shorter edge means a better fit, and a
+thicker edge connects a contact to the company they currently work at. Points
+are colored by type (Node / Company / Contact), hover shows the name, and
+clicking a point opens it (clicking a Node jumps to the contacts list
+filtered to that node). Built with D3's force simulation; no data ever
+leaves the browser for this view — it's rendered entirely from your own
+database.
 
 ## LLM-assisted classification
 
@@ -27,14 +50,36 @@ contacts against nodes:
   Claude", and review the extracted work history, education, and skills before
   saving. There is no LinkedIn API for pulling a third party's profile data, so
   this is a manual copy/paste step — Claude only structures what you've already
-  pasted.
+  pasted. In the same call, Claude also suggests node compatibility scores
+  based on the profile, and lists the companies found in the work history so
+  you can add them to the companies list and link the current employer — all
+  reviewable/editable on the same confirmation screen before anything saves.
 - **Interaction analysis** — when you log an interaction, you tag whether the
   note is a verbatim copy (e.g. from an email) or recalled from memory, then
   Claude proposes topic tags, a tone descriptor, and a short rationale. You
   review and can edit before it's saved.
+- **Briefings** — from the "Briefings" tab, pick a contact, state the purpose
+  of an upcoming communication (optionally linked to an Idea), and Claude
+  drafts contact/company highlights, suggested talking points, and open
+  questions — using your database plus a live web search. After the
+  communication happens, type what came up on the briefing's page and Claude
+  proposes a logged interaction and, where relevant, an updated company
+  description (e.g. a funding program's deadline they mentioned) — again
+  reviewable before saving.
 
-Both calls go through the Anthropic API server-side (see `llm.py`); nothing is
-written to the database until you confirm the review screen.
+All of these calls go through the Anthropic API server-side (see `llm.py`);
+nothing is written to the database until you confirm the review screen.
+
+Each contact, company, and idea page has a single **"Fill gaps with Claude"**
+button rather than separate buttons per feature — it picks up whatever is new
+(a logged interaction, a newly linked company, an edited description, ...)
+and refreshes the relevant scores in one pass. For companies specifically,
+this button also runs live web research. Claude never guesses which
+same-named company you mean from the name alone, so if there's no website on
+file yet, clicking the button doesn't call Claude at all — it first asks you
+for the website, then researches and scores together using that, so the
+score suggestions are grounded in the real company rather than a thin or
+wrong guess.
 
 ## Stack
 

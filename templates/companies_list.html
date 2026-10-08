@@ -1,27 +1,54 @@
 {% extends "base.html" %}
+{% import "_macros.html" as macros %}
 {% block title %}Companies — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Companies', none)]) }}{% endblock %}
 {% block content %}
-<h1>Companies</h1>
+<div class="button-row" style="justify-content: space-between; margin-bottom: 1.5rem;">
+    <h1 style="margin-bottom: 0;">Companies</h1>
+    <a href="{{ url_for('company_new') }}" class="btn">+ New company</a>
+</div>
 
 <form method="get" class="filter-bar">
     <input type="text" name="q" placeholder="Search name" value="{{ q }}">
-    <button type="submit">Filter</button>
-    <a href="{{ url_for('companies_list') }}">Clear</a>
+    <select name="sort">
+        <option value="name" {% if sort == 'name' %}selected{% endif %}>Sort: Name (A-Z)</option>
+        <option value="newest" {% if sort == 'newest' %}selected{% endif %}>Sort: Latest activity first</option>
+        <option value="oldest" {% if sort == 'oldest' %}selected{% endif %}>Sort: Oldest activity first</option>
+    </select>
+    <button type="submit" class="btn-ghost">Filter</button>
+    <a href="{{ url_for('companies_list') }}" class="muted">Clear</a>
 </form>
 
-<p><a href="{{ url_for('company_new') }}">+ New company</a></p>
-
-<table class="data-table">
-    <thead><tr><th>Name</th><th>Website</th></tr></thead>
-    <tbody>
-        {% for c in companies %}
-        <tr>
-            <td><a href="{{ url_for('company_detail', company_id=c.id) }}">{{ c.name }}</a></td>
-            <td>{{ c.website or '' }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="2" class="muted">No companies found.</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div class="card table-wrap">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Name</th><th>Industry</th><th>Website</th><th>Latest activity</th>
+                {% for n in nodes %}<th>{{ n.name }}</th>{% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in companies %}
+            {% set f = freshness_by_company.get(c.id) %}
+            {% set s = scores_by_company.get(c.id, {}) %}
+            <tr>
+                <td><a href="{{ url_for('company_detail', company_id=c.id) }}">{{ c.name }}</a></td>
+                <td>{{ c.industry or '' }}</td>
+                <td>{{ c.website or '' }}</td>
+                <td>
+                    {% if f %}
+                    <span class="heat-badge {{ f.css_class }}">{{ f.label }}</span>
+                    <span class="muted">{{ f.date }}</span>
+                    {% endif %}
+                </td>
+                {% for n in nodes %}
+                <td>{{ macros.score_cell(s.get(n.id)) }}</td>
+                {% endfor %}
+            </tr>
+            {% else %}
+            <tr><td colspan="{{ 4 + nodes|length }}" class="muted">No companies found.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 {% endblock %}

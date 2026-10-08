@@ -1,19 +1,22 @@
 {% extends "base.html" %}
 {% import "_macros.html" as macros %}
 {% block title %}{{ company.name }} — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Companies', url_for('companies_list')), (company.name, none)]) }}{% endblock %}
 {% block content %}
 <div class="button-row" style="justify-content: space-between;">
     <h1>{{ company.name }}</h1>
-    <a href="{{ url_for('delete_company', company_id=company.id) }}">Delete company</a>
+    <a href="{{ url_for('delete_company', company_id=company.id) }}" class="btn-danger">Delete company</a>
 </div>
+{% if company.industry %}<p class="muted">{{ company.industry }}</p>{% endif %}
 {% if company.website %}<p class="muted"><a href="{{ company.website }}">{{ company.website }}</a></p>{% endif %}
 {% if company.description %}<p>{{ company.description }}</p>{% endif %}
 {% if research_error %}<p class="error">{{ research_error }}</p>{% endif %}
-<form method="post" action="{{ url_for('suggest_company_research', company_id=company.id) }}">
-    <button type="submit">Research with Claude</button>
+{% if node_score_error %}<p class="error">{{ node_score_error }}</p>{% endif %}
+<form method="post" action="{{ url_for('analyze_company', company_id=company.id) }}">
+    <button type="submit">Fill gaps with Claude</button>
 </form>
 
-<section>
+<section class="card">
     <h2>Contacts at this company</h2>
     <ul class="plain-list">
         {% for c in contacts %}
@@ -25,34 +28,32 @@
     </ul>
 </section>
 
-<section>
+<section class="card">
     <h2>Node compatibility</h2>
-    {% if node_score_error %}<p class="error">{{ node_score_error }}</p>{% endif %}
     {{ macros.radar_chart('company-node-radar', radar_labels, radar_values, company.name) }}
     {% if radar_unscored %}
     <p class="muted">Not yet scored (shown as 0): {{ radar_unscored | join(', ') }}</p>
     {% endif %}
-    <form method="post" action="{{ url_for('suggest_company_node_scores', company_id=company.id) }}">
-        <button type="submit">Suggest scores with Claude</button>
-    </form>
-    <table class="data-table">
-        <thead><tr><th>Node</th><th>Score</th><th>Notes</th><th></th></tr></thead>
-        <tbody>
-            {% for s in scores %}
-            {% set form_id = "company-node-form-" ~ s.id %}
-            <tr>
-                <td>{{ s.name }}</td>
-                <td><input form="{{ form_id }}" type="number" name="score" min="0" max="100" value="{{ s.score if s.score is not none else '' }}" style="width:4em;"></td>
-                <td><input form="{{ form_id }}" type="text" name="notes" value="{{ s.notes or '' }}"></td>
-                <td>
-                    <form id="{{ form_id }}" method="post" action="{{ url_for('set_company_node', company_id=company.id) }}">
-                        <input type="hidden" name="node_id" value="{{ s.id }}">
-                        <button type="submit">Save</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead><tr><th>Node</th><th>Score</th><th>Notes</th><th></th></tr></thead>
+            <tbody>
+                {% for s in scores %}
+                {% set form_id = "company-node-form-" ~ s.id %}
+                <tr>
+                    <td>{{ s.name }}</td>
+                    <td><input form="{{ form_id }}" type="number" name="score" min="0" max="100" value="{{ s.score if s.score is not none else '' }}" style="width:4em;"></td>
+                    <td><input form="{{ form_id }}" type="text" name="notes" value="{{ s.notes or '' }}"></td>
+                    <td>
+                        <form id="{{ form_id }}" method="post" action="{{ url_for('set_company_node', company_id=company.id) }}">
+                            <input type="hidden" name="node_id" value="{{ s.id }}">
+                            <button type="submit" class="btn-ghost">Save</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </section>
 {% endblock %}

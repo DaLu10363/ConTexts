@@ -69,6 +69,20 @@ def ensure_schema(db):
         "rationale TEXT, scored_at TEXT, "
         "PRIMARY KEY (idea_id, contact_id, node_id))"
     )
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS briefings ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE, "
+        "idea_id INTEGER REFERENCES ideas(id) ON DELETE SET NULL, "
+        "purpose TEXT, format TEXT, scheduled_at TEXT, context_notes TEXT, "
+        "summary TEXT, contact_highlights TEXT, company_highlights TEXT, "
+        "talking_points TEXT, open_questions TEXT, sources TEXT, "
+        "status TEXT NOT NULL DEFAULT 'planned', "
+        "outcome_notes TEXT, outcome_summary TEXT, "
+        "interaction_id INTEGER REFERENCES interactions(id) ON DELETE SET NULL, "
+        "created_at TEXT NOT NULL DEFAULT (datetime('now')), "
+        "updated_at TEXT NOT NULL DEFAULT (datetime('now')))"
+    )
 
     contact_cols = {r[1] for r in db.execute("PRAGMA table_info(contacts)").fetchall()}
     contact_migrations = {
@@ -80,6 +94,10 @@ def ensure_schema(db):
     for col, stmt in contact_migrations.items():
         if col not in contact_cols:
             db.execute(stmt)
+
+    company_cols = {r[1] for r in db.execute("PRAGMA table_info(companies)").fetchall()}
+    if "industry" not in company_cols:
+        db.execute("ALTER TABLE companies ADD COLUMN industry TEXT")
 
     interaction_cols = {
         r[1] for r in db.execute("PRAGMA table_info(interactions)").fetchall()
@@ -148,6 +166,57 @@ def init_db_command():
     print(f"Initialized database at {DB_PATH}")
 
 
+def _graph_data(db):
+    nodes = db.execute("SELECT id, name FROM nodes ORDER BY name").fetchall()
+    contacts = db.execute(
+        "SELECT id, name, company_id FROM contacts ORDER BY name"
+    ).fetchall()
+    companies = db.execute("SELECT id, name FROM companies ORDER BY name").fetchall()
+    contact_scores = db.execute(
+        "SELECT contact_id, node_id, score FROM contact_nodes WHERE score IS NOT NULL"
+    ).fetchall()
+    company_scores = db.execute(
+        "SELECT company_id, node_id, score FROM company_nodes WHERE score IS NOT NULL"
+    ).fetchall()
+
+    graph_nodes = []
+    for n in nodes:
+        graph_nodes.append({
+            "id": f"node-{n['id']}", "type": "node", "label": n["name"],
+            "url": url_for("contacts_list", node_id=n["id"]),
+        })
+    for c in contacts:
+        graph_nodes.append({
+            "id": f"contact-{c['id']}", "type": "contact", "label": c["name"],
+            "url": url_for("contact_detail", contact_id=c["id"]),
+        })
+    for co in companies:
+        graph_nodes.append({
+            "id": f"company-{co['id']}", "type": "company", "label": co["name"],
+            "url": url_for("company_detail", company_id=co["id"]),
+        })
+
+    graph_links = []
+    for r in contact_scores:
+        graph_links.append({
+            "source": f"contact-{r['contact_id']}", "target": f"node-{r['node_id']}",
+            "kind": "score", "score": r["score"],
+        })
+    for r in company_scores:
+        graph_links.append({
+            "source": f"company-{r['company_id']}", "target": f"node-{r['node_id']}",
+            "kind": "score", "score": r["score"],
+        })
+    for c in contacts:
+        if c["company_id"] is not None:
+            graph_links.append({
+                "source": f"contact-{c['id']}", "target": f"company-{c['company_id']}",
+                "kind": "employment", "score": None,
+            })
+
+    return {"nodes": graph_nodes, "links": graph_links}
+
+
 @app.route("/")
 def index():
     db = get_db()
@@ -159,12 +228,19 @@ def index():
     ).fetchall()
     counts = {
         "contacts": db.execute("SELECT COUNT(*) FROM contacts").fetchone()[0],
+        "companies": db.execute("SELECT COUNT(*) FROM companies").fetchone()[0],
         "ideas": db.execute("SELECT COUNT(*) FROM ideas").fetchone()[0],
+        "briefings": db.execute("SELECT COUNT(*) FROM briefings").fetchone()[0],
         "interactions": db.execute("SELECT COUNT(*) FROM interactions").fetchone()[0],
     }
+    graph = _graph_data(db)
     return render_template(
-        "index.html", contacts=contacts, ideas=ideas, counts=counts
+        "index.html", contacts=contacts, ideas=ideas, counts=counts,
+        graph=graph,
     )
+
+
+CONTACT_SORT_OPTIONS = {"name", "newest", "oldest"}
 
 
 @app.route("/contacts")
@@ -172,6 +248,9 @@ def contacts_list():
     db = get_db()
     q = request.args.get("q", "").strip()
     node_id = request.args.get("node_id", "").strip()
+    sort = request.args.get("sort", "name").strip()
+    if sort not in CONTACT_SORT_OPTIONS:
+        sort = "name"
 
     query = (
         "SELECT DISTINCT c.*, "
@@ -196,13 +275,28 @@ def contacts_list():
     freshness_by_contact = {
         c["id"]: _freshness(c["last_interaction"] or c["created_at"]) for c in contacts
     }
+
+    score_rows = db.execute("SELECT contact_id, node_id, score FROM contact_nodes").fetchall()
+    scores_by_contact = {}
+    for r in score_rows:
+        scores_by_contact.setdefault(r["contact_id"], {})[r["node_id"]] = r["score"]
+
+    if sort == "newest":
+        contacts = sorted(contacts, key=lambda c: freshness_by_contact[c["id"]]["days"])
+    elif sort == "oldest":
+        contacts = sorted(contacts, key=lambda c: freshness_by_contact[c["id"]]["days"], reverse=True)
+    else:
+        contacts = sorted(contacts, key=lambda c: (c["name"] or "").lower())
+
     return render_template(
         "contacts_list.html",
         contacts=contacts,
         nodes=nodes,
         q=q,
         node_id=node_id,
+        sort=sort,
         freshness_by_contact=freshness_by_contact,
+        scores_by_contact=scores_by_contact,
     )
 
 
@@ -230,8 +324,9 @@ def contact_new():
                     linkedin_text=linkedin_text,
                     error="Paste some LinkedIn profile text first.",
                 )
+            nodes = db.execute("SELECT * FROM nodes ORDER BY name").fetchall()
             try:
-                profile = llm.parse_linkedin_profile(linkedin_text)
+                enrichment = llm.parse_and_enrich_contact(linkedin_text, nodes)
             except Exception as exc:
                 return render_template(
                     "contact_form.html",
@@ -239,12 +334,46 @@ def contact_new():
                     linkedin_text=linkedin_text,
                     error=f"Couldn't parse with Claude: {exc}",
                 )
+            profile = enrichment.profile
+
+            node_by_name = {n["name"].lower(): n for n in nodes}
+            node_suggestions = []
+            for s in enrichment.node_scores:
+                node = node_by_name.get(s.node_name.lower())
+                if node is not None:
+                    node_suggestions.append(
+                        {"node_id": node["id"], "node_name": node["name"],
+                         "score": s.score, "rationale": s.rationale}
+                    )
+
+            company_names = []
+            seen = set()
+            for job in profile.work_history:
+                name = job.company.strip()
+                if name and name.lower() not in seen:
+                    seen.add(name.lower())
+                    company_names.append(name)
+            current_company = (profile.current_company or "").strip()
+            current_company_match = next(
+                (n for n in company_names if n.lower() == current_company.lower()),
+                None,
+            ) if current_company else None
+            if current_company_match is None:
+                for job in profile.work_history:
+                    name = job.company.strip()
+                    if name and not job.end:
+                        current_company_match = name
+                        break
+
             return render_template(
                 "contact_review.html",
                 fields=fields,
                 linkedin_text=linkedin_text,
                 profile=profile,
                 profile_json=profile.model_dump_json(),
+                node_suggestions=node_suggestions,
+                company_names=company_names,
+                current_company_match=current_company_match,
             )
 
         if not fields["name"]:
@@ -304,8 +433,48 @@ def contact_new_confirm():
             request.form.get("profile_json") or None,
         ),
     )
-    db.commit()
     contact_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    node_ids = request.form.getlist("node_id")
+    scores = request.form.getlist("score")
+    rationales = request.form.getlist("rationale")
+    for node_id, score, rationale in zip(node_ids, scores, rationales):
+        score = score.strip()
+        if not score:
+            continue
+        db.execute(
+            "INSERT INTO contact_nodes (contact_id, node_id, score, notes) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(contact_id, node_id) DO UPDATE SET score = ?, notes = ?",
+            (contact_id, node_id, score, rationale.strip() or None,
+             score, rationale.strip() or None),
+        )
+
+    company_add = request.form.getlist("company_add")
+    current_company = request.form.get("current_company", "").strip()
+    current_company_id = None
+    for company_name in company_add:
+        company_name = company_name.strip()
+        if not company_name:
+            continue
+        existing = db.execute(
+            "SELECT * FROM companies WHERE lower(name) = lower(?)", (company_name,)
+        ).fetchone()
+        if existing is not None:
+            company_id = existing["id"]
+        else:
+            db.execute("INSERT INTO companies (name) VALUES (?)", (company_name,))
+            company_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        if current_company and company_name.lower() == current_company.lower():
+            current_company_id = company_id
+
+    if current_company_id is not None:
+        db.execute(
+            "UPDATE contacts SET company_id = ? WHERE id = ?",
+            (current_company_id, contact_id),
+        )
+
+    db.commit()
     return redirect(url_for("contact_detail", contact_id=contact_id))
 
 
@@ -341,6 +510,11 @@ def _contact_detail_context(db, contact_id):
             "SELECT * FROM companies WHERE id = ?", (contact["company_id"],)
         ).fetchone()
     all_companies = db.execute("SELECT * FROM companies ORDER BY name").fetchall()
+    briefings = db.execute(
+        "SELECT * FROM briefings WHERE contact_id = ? "
+        "ORDER BY COALESCE(scheduled_at, created_at) DESC",
+        (contact_id,),
+    ).fetchall()
     last_contact_date = interactions[0]["occurred_at"] if interactions else contact["created_at"]
     return {
         "contact": contact,
@@ -350,6 +524,7 @@ def _contact_detail_context(db, contact_id):
         "profile": profile,
         "company": company,
         "all_companies": all_companies,
+        "briefings": briefings,
         "radar_labels": radar_labels,
         "radar_values": radar_values,
         "radar_unscored": radar_unscored,
@@ -554,6 +729,7 @@ def suggest_node_scores(contact_id):
         subject_name=contact["name"],
         basis_text="Claude's suggestions, based on the LinkedIn profile and logged interactions.",
         confirm_url=url_for("confirm_node_scores", contact_id=contact_id),
+        contact_id=contact_id,
         suggestions=suggestions,
     )
 
@@ -607,10 +783,17 @@ def _company_detail_context(db, company_id):
     }
 
 
+COMPANY_SORT_OPTIONS = {"name", "newest", "oldest"}
+
+
 @app.route("/companies")
 def companies_list():
     db = get_db()
     q = request.args.get("q", "").strip()
+    sort = request.args.get("sort", "name").strip()
+    if sort not in COMPANY_SORT_OPTIONS:
+        sort = "name"
+
     query = "SELECT * FROM companies"
     params = []
     if q:
@@ -618,7 +801,39 @@ def companies_list():
         params.append(f"%{q}%")
     query += " ORDER BY name"
     companies = db.execute(query, params).fetchall()
-    return render_template("companies_list.html", companies=companies, q=q)
+    nodes = db.execute("SELECT * FROM nodes ORDER BY name").fetchall()
+
+    score_rows = db.execute("SELECT company_id, node_id, score FROM company_nodes").fetchall()
+    scores_by_company = {}
+    for r in score_rows:
+        scores_by_company.setdefault(r["company_id"], {})[r["node_id"]] = r["score"]
+
+    freshness_by_company = {}
+    for c in companies:
+        activity = db.execute(
+            "SELECT MAX(COALESCE(i.occurred_at, ct.created_at)) AS activity_at "
+            "FROM contacts ct LEFT JOIN interactions i ON i.contact_id = ct.id "
+            "WHERE ct.company_id = ?",
+            (c["id"],),
+        ).fetchone()["activity_at"]
+        freshness_by_company[c["id"]] = _freshness(activity or c["created_at"])
+
+    if sort == "newest":
+        companies = sorted(companies, key=lambda c: freshness_by_company[c["id"]]["days"])
+    elif sort == "oldest":
+        companies = sorted(companies, key=lambda c: freshness_by_company[c["id"]]["days"], reverse=True)
+    else:
+        companies = sorted(companies, key=lambda c: (c["name"] or "").lower())
+
+    return render_template(
+        "companies_list.html",
+        companies=companies,
+        q=q,
+        sort=sort,
+        nodes=nodes,
+        scores_by_company=scores_by_company,
+        freshness_by_company=freshness_by_company,
+    )
 
 
 @app.route("/companies/new", methods=["GET", "POST"])
@@ -628,20 +843,25 @@ def company_new():
         name = request.form.get("name", "").strip()
         if not name:
             return render_template(
-                "company_form.html", company=request.form, error="Name is required."
+                "company_form.html", company=request.form, error="Name is required.",
+                industry_options=llm.INDUSTRY_OPTIONS,
             )
         db.execute(
-            "INSERT INTO companies (name, description, website) VALUES (?, ?, ?)",
+            "INSERT INTO companies (name, description, website, industry) "
+            "VALUES (?, ?, ?, ?)",
             (
                 name,
                 request.form.get("description", "").strip() or None,
                 request.form.get("website", "").strip() or None,
+                request.form.get("industry", "").strip() or None,
             ),
         )
         db.commit()
         company_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
         return redirect(url_for("company_detail", company_id=company_id))
-    return render_template("company_form.html", company=None)
+    return render_template(
+        "company_form.html", company=None, industry_options=llm.INDUSTRY_OPTIONS
+    )
 
 
 @app.route("/companies/<int:company_id>")
@@ -652,8 +872,8 @@ def company_detail(company_id):
     )
 
 
-@app.route("/companies/<int:company_id>/research", methods=["POST"])
-def suggest_company_research(company_id):
+@app.route("/companies/<int:company_id>/analyze", methods=["POST"])
+def analyze_company(company_id):
     db = get_db()
     company = db.execute(
         "SELECT * FROM companies WHERE id = ?", (company_id,)
@@ -661,8 +881,43 @@ def suggest_company_research(company_id):
     if company is None:
         abort(404)
 
+    # Claude never guesses which same-named company this is from the name
+    # alone - without a website to anchor the search, research comes back
+    # thin and scoring off that thin picture is little better than random.
+    # So nothing calls Claude until a website is known.
+    if not company["website"]:
+        return render_template("company_request_website.html", company=company)
+
+    return _run_company_analysis(db, company, company["website"])
+
+
+@app.route("/companies/<int:company_id>/analyze/with_website", methods=["POST"])
+def analyze_company_with_website(company_id):
+    db = get_db()
+    company = db.execute(
+        "SELECT * FROM companies WHERE id = ?", (company_id,)
+    ).fetchone()
+    if company is None:
+        abort(404)
+    website = request.form.get("website", "").strip()
+    if not website:
+        return render_template(
+            "company_request_website.html",
+            company=company,
+            error="Enter a website to continue.",
+        )
+    return _run_company_analysis(db, company, website)
+
+
+def _run_company_analysis(db, company, website):
+    company_id = company["id"]
+    contacts = db.execute(
+        "SELECT * FROM contacts WHERE company_id = ? ORDER BY name", (company_id,)
+    ).fetchall()
+    nodes = db.execute("SELECT * FROM nodes ORDER BY name").fetchall()
+
     try:
-        result = llm.research_company(company["name"], company["website"])
+        research_result = llm.research_company(company["name"], website)
     except Exception as exc:
         return render_template(
             "company_detail.html",
@@ -670,26 +925,71 @@ def suggest_company_research(company_id):
             research_error=f"Couldn't research with Claude: {exc}",
         )
 
+    # Score against the freshly researched picture, not the stale/empty
+    # description still sitting in the DB - that's what was producing
+    # thin, near-random-looking grades before a website was required.
+    enriched_company = dict(company)
+    enriched_company["description"] = research_result.description
+    enriched_company["website"] = research_result.website or website
+    enriched_company["industry"] = research_result.industry or company["industry"]
+
+    try:
+        score_result = llm.score_company_nodes(enriched_company, contacts, nodes)
+    except Exception as exc:
+        return render_template(
+            "company_detail.html",
+            **_company_detail_context(db, company_id),
+            node_score_error=f"Couldn't score with Claude: {exc}",
+        )
+
+    node_by_name = {n["name"].lower(): n for n in nodes}
+    suggestions = []
+    for s in score_result.suggestions:
+        node = node_by_name.get(s.node_name.lower())
+        if node is not None:
+            suggestions.append(
+                {"node_id": node["id"], "node_name": node["name"],
+                 "score": s.score, "rationale": s.rationale}
+            )
+
     return render_template(
-        "company_research_review.html",
+        "company_analysis_review.html",
         company=company,
-        description=result.description,
-        website=result.website or company["website"] or "",
+        description=enriched_company["description"],
+        website=enriched_company["website"],
+        industry=enriched_company["industry"],
+        industry_options=llm.INDUSTRY_OPTIONS,
+        suggestions=suggestions,
     )
 
 
-@app.route("/companies/<int:company_id>/research/confirm", methods=["POST"])
-def confirm_company_research(company_id):
+@app.route("/companies/<int:company_id>/analyze/confirm", methods=["POST"])
+def confirm_company_analysis(company_id):
     db = get_db()
     db.execute(
-        "UPDATE companies SET description = ?, website = ?, "
+        "UPDATE companies SET description = ?, website = ?, industry = ?, "
         "updated_at = datetime('now') WHERE id = ?",
         (
             request.form.get("description", "").strip() or None,
             request.form.get("website", "").strip() or None,
+            request.form.get("industry", "").strip() or None,
             company_id,
         ),
     )
+    node_ids = request.form.getlist("node_id")
+    scores = request.form.getlist("score")
+    rationales = request.form.getlist("rationale")
+    for node_id, score, rationale in zip(node_ids, scores, rationales):
+        score = score.strip()
+        if not score:
+            continue
+        rationale = rationale.strip() or None
+        db.execute(
+            "INSERT INTO company_nodes (company_id, node_id, score, notes) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(company_id, node_id) DO UPDATE SET score = ?, notes = ?",
+            (company_id, node_id, score, rationale, score, rationale),
+        )
     db.commit()
     return redirect(url_for("company_detail", company_id=company_id))
 
@@ -738,67 +1038,6 @@ def set_company_node(company_id):
         "ON CONFLICT(company_id, node_id) DO UPDATE SET score = ?, notes = ?",
         (company_id, node_id, score, notes, score, notes),
     )
-    db.commit()
-    return redirect(url_for("company_detail", company_id=company_id))
-
-
-@app.route("/companies/<int:company_id>/nodes/suggest", methods=["POST"])
-def suggest_company_node_scores(company_id):
-    db = get_db()
-    company = db.execute(
-        "SELECT * FROM companies WHERE id = ?", (company_id,)
-    ).fetchone()
-    if company is None:
-        abort(404)
-    contacts = db.execute(
-        "SELECT * FROM contacts WHERE company_id = ? ORDER BY name", (company_id,)
-    ).fetchall()
-    nodes = db.execute("SELECT * FROM nodes ORDER BY name").fetchall()
-
-    try:
-        result = llm.score_company_nodes(company, contacts, nodes)
-    except Exception as exc:
-        return render_template(
-            "company_detail.html",
-            **_company_detail_context(db, company_id),
-            node_score_error=f"Couldn't score with Claude: {exc}",
-        )
-
-    node_by_name = {n["name"].lower(): n for n in nodes}
-    suggestions = []
-    for s in result.suggestions:
-        node = node_by_name.get(s.node_name.lower())
-        if node is not None:
-            suggestions.append(
-                {"node_id": node["id"], "node_name": node["name"],
-                 "score": s.score, "rationale": s.rationale}
-            )
-    return render_template(
-        "node_score_review.html",
-        subject_name=company["name"],
-        basis_text="Claude's suggestions, based on the company description and known contacts there.",
-        confirm_url=url_for("confirm_company_node_scores", company_id=company_id),
-        suggestions=suggestions,
-    )
-
-
-@app.route("/companies/<int:company_id>/nodes/confirm_bulk", methods=["POST"])
-def confirm_company_node_scores(company_id):
-    db = get_db()
-    node_ids = request.form.getlist("node_id")
-    scores = request.form.getlist("score")
-    rationales = request.form.getlist("rationale")
-    for node_id, score, rationale in zip(node_ids, scores, rationales):
-        score = score.strip()
-        if not score:
-            continue
-        rationale = rationale.strip() or None
-        db.execute(
-            "INSERT INTO company_nodes (company_id, node_id, score, notes) "
-            "VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(company_id, node_id) DO UPDATE SET score = ?, notes = ?",
-            (company_id, node_id, score, rationale, score, rationale),
-        )
     db.commit()
     return redirect(url_for("company_detail", company_id=company_id))
 
@@ -1013,6 +1252,314 @@ def confirm_idea_fit(idea_id):
     )
     db.commit()
     return redirect(url_for("idea_detail", idea_id=idea_id))
+
+
+BRIEFING_STATUS_OPTIONS = {"planned", "completed"}
+
+
+@app.route("/briefings")
+def briefings_list():
+    db = get_db()
+    status = request.args.get("status", "").strip()
+    query = (
+        "SELECT b.*, c.name AS contact_name FROM briefings b "
+        "JOIN contacts c ON c.id = b.contact_id"
+    )
+    params = []
+    if status in BRIEFING_STATUS_OPTIONS:
+        query += " WHERE b.status = ?"
+        params.append(status)
+    query += " ORDER BY COALESCE(b.scheduled_at, b.created_at) DESC"
+    briefings = db.execute(query, params).fetchall()
+    return render_template("briefings_list.html", briefings=briefings, status=status)
+
+
+@app.route("/briefings/new", methods=["GET", "POST"])
+def briefing_new():
+    db = get_db()
+    contacts = db.execute("SELECT * FROM contacts ORDER BY name").fetchall()
+    ideas = db.execute("SELECT * FROM ideas ORDER BY title").fetchall()
+
+    if request.method == "GET":
+        return render_template(
+            "briefing_form.html", contacts=contacts, ideas=ideas, fields=None
+        )
+
+    fields = {
+        "contact_id": request.form.get("contact_id", "").strip(),
+        "idea_id": request.form.get("idea_id", "").strip(),
+        "purpose": request.form.get("purpose", "").strip(),
+        "format": request.form.get("format", "").strip(),
+        "scheduled_at": request.form.get("scheduled_at", "").strip(),
+        "context_notes": request.form.get("context_notes", "").strip(),
+    }
+    if not fields["contact_id"] or not fields["purpose"]:
+        return render_template(
+            "briefing_form.html",
+            contacts=contacts,
+            ideas=ideas,
+            fields=fields,
+            error="Pick a contact and describe the purpose first.",
+        )
+
+    contact = db.execute(
+        "SELECT * FROM contacts WHERE id = ?", (fields["contact_id"],)
+    ).fetchone()
+    if contact is None:
+        abort(404)
+    profile = json.loads(contact["profile_data"]) if contact["profile_data"] else None
+
+    company = None
+    company_node_scores = None
+    if contact["company_id"] is not None:
+        company = db.execute(
+            "SELECT * FROM companies WHERE id = ?", (contact["company_id"],)
+        ).fetchone()
+        company_node_scores = db.execute(
+            "SELECT n.name, cn.score FROM company_nodes cn "
+            "JOIN nodes n ON n.id = cn.node_id WHERE cn.company_id = ?",
+            (contact["company_id"],),
+        ).fetchall()
+
+    idea = None
+    idea_fit = None
+    if fields["idea_id"]:
+        idea = db.execute(
+            "SELECT * FROM ideas WHERE id = ?", (fields["idea_id"],)
+        ).fetchone()
+        if idea is not None:
+            idea_fit = db.execute(
+                "SELECT fit_score, fit_rationale FROM idea_contacts "
+                "WHERE idea_id = ? AND contact_id = ?",
+                (fields["idea_id"], fields["contact_id"]),
+            ).fetchone()
+
+    interactions = db.execute(
+        "SELECT * FROM interactions WHERE contact_id = ? ORDER BY occurred_at DESC",
+        (fields["contact_id"],),
+    ).fetchall()
+
+    try:
+        result = llm.generate_briefing(
+            contact,
+            profile,
+            company,
+            company_node_scores,
+            idea,
+            idea_fit,
+            interactions,
+            fields["purpose"],
+            fields["format"],
+            fields["scheduled_at"],
+            fields["context_notes"],
+        )
+    except Exception as exc:
+        return render_template(
+            "briefing_form.html",
+            contacts=contacts,
+            ideas=ideas,
+            fields=fields,
+            error=f"Couldn't generate a briefing with Claude: {exc}",
+        )
+
+    return render_template(
+        "briefing_review.html",
+        contact=contact,
+        idea=idea,
+        fields=fields,
+        result=result,
+    )
+
+
+@app.route("/briefings/confirm", methods=["POST"])
+def briefing_confirm():
+    db = get_db()
+
+    def lines(name):
+        return [l.strip() for l in request.form.get(name, "").splitlines() if l.strip()]
+
+    db.execute(
+        "INSERT INTO briefings "
+        "(contact_id, idea_id, purpose, format, scheduled_at, context_notes, "
+        "summary, contact_highlights, company_highlights, talking_points, "
+        "open_questions, sources) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            request.form["contact_id"],
+            request.form.get("idea_id") or None,
+            request.form.get("purpose", "").strip() or None,
+            request.form.get("format", "").strip() or None,
+            request.form.get("scheduled_at", "").strip() or None,
+            request.form.get("context_notes", "").strip() or None,
+            request.form.get("summary", "").strip(),
+            json.dumps(lines("contact_highlights")),
+            json.dumps(lines("company_highlights")),
+            json.dumps(lines("talking_points")),
+            json.dumps(lines("open_questions")),
+            json.dumps(lines("sources")),
+        ),
+    )
+    db.commit()
+    briefing_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    return redirect(url_for("briefing_detail", briefing_id=briefing_id))
+
+
+def _briefing_detail_context(db, briefing_id):
+    briefing = db.execute(
+        "SELECT * FROM briefings WHERE id = ?", (briefing_id,)
+    ).fetchone()
+    if briefing is None:
+        abort(404)
+    contact = db.execute(
+        "SELECT * FROM contacts WHERE id = ?", (briefing["contact_id"],)
+    ).fetchone()
+    idea = None
+    if briefing["idea_id"] is not None:
+        idea = db.execute(
+            "SELECT * FROM ideas WHERE id = ?", (briefing["idea_id"],)
+        ).fetchone()
+    return {
+        "briefing": briefing,
+        "contact": contact,
+        "idea": idea,
+        "contact_highlights": json.loads(briefing["contact_highlights"] or "[]"),
+        "company_highlights": json.loads(briefing["company_highlights"] or "[]"),
+        "talking_points": json.loads(briefing["talking_points"] or "[]"),
+        "open_questions": json.loads(briefing["open_questions"] or "[]"),
+        "sources": json.loads(briefing["sources"] or "[]"),
+        "today": date.today().isoformat(),
+    }
+
+
+@app.route("/briefings/<int:briefing_id>")
+def briefing_detail(briefing_id):
+    db = get_db()
+    return render_template(
+        "briefing_detail.html", **_briefing_detail_context(db, briefing_id)
+    )
+
+
+@app.route("/briefings/<int:briefing_id>/delete", methods=["GET", "POST"])
+def delete_briefing(briefing_id):
+    db = get_db()
+    briefing = db.execute(
+        "SELECT * FROM briefings WHERE id = ?", (briefing_id,)
+    ).fetchone()
+    if briefing is None:
+        return redirect(url_for("briefings_list"))
+
+    if request.method == "POST":
+        db.execute("DELETE FROM briefings WHERE id = ?", (briefing_id,))
+        db.commit()
+        return redirect(url_for("briefings_list"))
+
+    contact = db.execute(
+        "SELECT * FROM contacts WHERE id = ?", (briefing["contact_id"],)
+    ).fetchone()
+    return render_template(
+        "briefing_delete_confirm.html", briefing=briefing, contact=contact
+    )
+
+
+@app.route("/briefings/<int:briefing_id>/outcome", methods=["POST"])
+def review_briefing_outcome(briefing_id):
+    db = get_db()
+    raw_notes = request.form.get("raw_notes", "").strip()
+    context = _briefing_detail_context(db, briefing_id)
+    if not raw_notes:
+        return render_template(
+            "briefing_detail.html",
+            **context,
+            outcome_error="Describe what happened first.",
+        )
+
+    briefing = context["briefing"]
+    contact = context["contact"]
+    company = None
+    if contact["company_id"] is not None:
+        company = db.execute(
+            "SELECT * FROM companies WHERE id = ?", (contact["company_id"],)
+        ).fetchone()
+
+    try:
+        result = llm.analyze_briefing_outcome(contact, company, briefing, raw_notes)
+    except Exception as exc:
+        return render_template(
+            "briefing_detail.html",
+            **context,
+            outcome_error=f"Couldn't analyze with Claude: {exc}",
+            raw_notes=raw_notes,
+        )
+
+    return render_template(
+        "briefing_outcome_review.html",
+        briefing=briefing,
+        contact=contact,
+        company=company,
+        result=result,
+        raw_notes=raw_notes,
+        today=date.today().isoformat(),
+        tags_text=", ".join(result.interaction_tags),
+    )
+
+
+@app.route("/briefings/<int:briefing_id>/outcome/confirm", methods=["POST"])
+def confirm_briefing_outcome(briefing_id):
+    db = get_db()
+    briefing = db.execute(
+        "SELECT * FROM briefings WHERE id = ?", (briefing_id,)
+    ).fetchone()
+    if briefing is None:
+        abort(404)
+    contact_id = briefing["contact_id"]
+
+    tags = [t.strip() for t in request.form.get("tags", "").split(",") if t.strip()]
+    db.execute(
+        "INSERT INTO interactions "
+        "(contact_id, occurred_at, summary, next_steps, source_type, "
+        "topic_tags, tone, analysis_rationale, analyzed_at) "
+        "VALUES (?, ?, ?, ?, 'recalled', ?, ?, ?, datetime('now'))",
+        (
+            contact_id,
+            request.form.get("occurred_at") or date.today().isoformat(),
+            request.form["summary"].strip(),
+            request.form.get("next_steps", "").strip() or None,
+            json.dumps(tags) if tags else None,
+            request.form.get("tone", "").strip() or None,
+            "Logged from meeting briefing outcome.",
+        ),
+    )
+    interaction_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    db.execute(
+        "UPDATE contacts SET updated_at = datetime('now') WHERE id = ?",
+        (contact_id,),
+    )
+
+    company_update = request.form.get("company_update", "").strip()
+    if company_update:
+        contact = db.execute(
+            "SELECT * FROM contacts WHERE id = ?", (contact_id,)
+        ).fetchone()
+        if contact["company_id"] is not None:
+            db.execute(
+                "UPDATE companies SET description = ?, updated_at = datetime('now') "
+                "WHERE id = ?",
+                (company_update, contact["company_id"]),
+            )
+
+    db.execute(
+        "UPDATE briefings SET status = 'completed', outcome_notes = ?, "
+        "outcome_summary = ?, interaction_id = ?, updated_at = datetime('now') "
+        "WHERE id = ?",
+        (
+            request.form.get("raw_notes", "").strip() or None,
+            request.form.get("outcome_summary", "").strip() or None,
+            interaction_id,
+            briefing_id,
+        ),
+    )
+    db.commit()
+    return redirect(url_for("briefing_detail", briefing_id=briefing_id))
 
 
 if __name__ == "__main__":

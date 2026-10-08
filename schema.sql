@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS companies (
     name TEXT NOT NULL,
     description TEXT,
     website TEXT,
+    industry TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -108,3 +109,30 @@ INSERT OR IGNORE INTO nodes (name, description) VALUES
     ('Cofounder', 'Potential or actual co-founder'),
     ('Consultant', 'Provides expert advice'),
     ('Contributor/Contractor', 'Executes defined work on a contract basis');
+
+-- Meeting/communication prep, parallel to the main database: the user
+-- states an upcoming contact + purpose, Claude researches (DB + web search)
+-- and produces a reviewable briefing; after the meeting, raw outcome notes
+-- are turned into a logged interaction and, where relevant, folded into the
+-- linked company's description.
+CREATE TABLE IF NOT EXISTS briefings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    idea_id INTEGER REFERENCES ideas(id) ON DELETE SET NULL,
+    purpose TEXT,
+    format TEXT,
+    scheduled_at TEXT,
+    context_notes TEXT,
+    summary TEXT,
+    contact_highlights TEXT,
+    company_highlights TEXT,
+    talking_points TEXT,
+    open_questions TEXT,
+    sources TEXT,
+    status TEXT NOT NULL DEFAULT 'planned',
+    outcome_notes TEXT,
+    outcome_summary TEXT,
+    interaction_id INTEGER REFERENCES interactions(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

@@ -1,7 +1,12 @@
 {% extends "base.html" %}
+{% import "_macros.html" as macros %}
 {% block title %}Contacts — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Contacts', none)]) }}{% endblock %}
 {% block content %}
-<h1>Contacts</h1>
+<div class="button-row" style="justify-content: space-between; margin-bottom: 1.5rem;">
+    <h1 style="margin-bottom: 0;">Contacts</h1>
+    <a href="{{ url_for('contact_new') }}" class="btn">+ New contact</a>
+</div>
 
 <form method="get" class="filter-bar">
     <input type="text" name="q" placeholder="Search name or company" value="{{ q }}">
@@ -11,31 +16,45 @@
         <option value="{{ n.id }}" {% if node_id == n.id|string %}selected{% endif %}>{{ n.name }}</option>
         {% endfor %}
     </select>
-    <button type="submit">Filter</button>
-    <a href="{{ url_for('contacts_list') }}">Clear</a>
+    <select name="sort">
+        <option value="name" {% if sort == 'name' %}selected{% endif %}>Sort: Name (A-Z)</option>
+        <option value="newest" {% if sort == 'newest' %}selected{% endif %}>Sort: Latest contact first</option>
+        <option value="oldest" {% if sort == 'oldest' %}selected{% endif %}>Sort: Oldest contact first</option>
+    </select>
+    <button type="submit" class="btn-ghost">Filter</button>
+    <a href="{{ url_for('contacts_list') }}" class="muted">Clear</a>
 </form>
 
-<p><a href="{{ url_for('contact_new') }}">+ New contact</a></p>
-
-<table class="data-table">
-    <thead><tr><th>Name</th><th>Company</th><th>Title</th><th>Last contact</th></tr></thead>
-    <tbody>
-        {% for c in contacts %}
-        {% set f = freshness_by_contact.get(c.id) %}
-        <tr>
-            <td><a href="{{ url_for('contact_detail', contact_id=c.id) }}">{{ c.name }}</a></td>
-            <td>{{ c.company or '' }}</td>
-            <td>{{ c.title or '' }}</td>
-            <td>
-                {% if f %}
-                <span class="heat-badge {{ f.css_class }}">{{ f.label }}</span>
-                <span class="muted">{{ f.date }}</span>
-                {% endif %}
-            </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="4" class="muted">No contacts found.</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div class="card table-wrap">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Name</th><th>Company</th><th>Title</th><th>Last contact</th>
+                {% for n in nodes %}<th>{{ n.name }}</th>{% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in contacts %}
+            {% set f = freshness_by_contact.get(c.id) %}
+            {% set s = scores_by_contact.get(c.id, {}) %}
+            <tr>
+                <td><a href="{{ url_for('contact_detail', contact_id=c.id) }}">{{ c.name }}</a></td>
+                <td>{{ c.company or '' }}</td>
+                <td>{{ c.title or '' }}</td>
+                <td>
+                    {% if f %}
+                    <span class="heat-badge {{ f.css_class }}">{{ f.label }}</span>
+                    <span class="muted">{{ f.date }}</span>
+                    {% endif %}
+                </td>
+                {% for n in nodes %}
+                <td>{{ macros.score_cell(s.get(n.id)) }}</td>
+                {% endfor %}
+            </tr>
+            {% else %}
+            <tr><td colspan="{{ 4 + nodes|length }}" class="muted">No contacts found.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 {% endblock %}

@@ -1,3 +1,21 @@
+{% macro score_cell(value) %}
+{%- if value is none -%}
+<span class="muted">—</span>
+{%- else -%}
+<span class="score-pill {{ 'score-high' if value >= 70 else ('score-low' if value < 40 else '') }}">{{ value }}</span>
+{%- endif -%}
+{% endmacro %}
+
+{% macro breadcrumbs(items) %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    {% for label, url in items %}
+    {%- if not loop.last and url %}<a href="{{ url }}">{{ label }}</a><span class="sep">/</span>
+    {%- else %}<span class="current">{{ label }}</span>
+    {%- endif %}
+    {% endfor %}
+</nav>
+{% endmacro %}
+
 {% macro radar_chart(canvas_id, labels, values, series_name) %}
 <div class="radar-wrap">
     <canvas id="{{ canvas_id }}" width="360" height="360"></canvas>
@@ -6,7 +24,7 @@
 (function () {
     var palette = {
         light: { series: '#2a78d6', fill: 'rgba(42, 120, 214, 0.15)', grid: '#e1e0d9', angle: '#e1e0d9', tick: '#898781', label: '#0b0b0b' },
-        dark:  { series: '#3987e5', fill: 'rgba(57, 135, 229, 0.20)', grid: '#2c2c2a', angle: '#2c2c2a', tick: '#898781', label: '#ffffff' }
+        dark:  { series: '#8b7cf6', fill: 'rgba(139, 124, 246, 0.20)', grid: '#2a2440', angle: '#2a2440', tick: '#9792b3', label: '#f4f2fb' }
     };
     var mql = window.matchMedia('(prefers-color-scheme: dark)');
     var labels = {{ labels | tojson }};
@@ -14,8 +32,15 @@
     var ctx = document.getElementById({{ canvas_id | tojson }});
     var chart = null;
 
+    function isDark() {
+        var attr = document.documentElement.getAttribute('data-theme');
+        if (attr === 'light') return false;
+        if (attr === 'dark') return true;
+        return mql.matches;
+    }
+
     function colors() {
-        return mql.matches ? palette.dark : palette.light;
+        return isDark() ? palette.dark : palette.light;
     }
 
     function render() {
@@ -59,6 +84,7 @@
 
     render();
     mql.addEventListener('change', render);
+    window.addEventListener('contexts-theme-change', render);
 })();
 </script>
 {% endmacro %}

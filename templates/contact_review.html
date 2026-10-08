@@ -1,19 +1,23 @@
 {% extends "base.html" %}
+{% import "_macros.html" as macros %}
 {% block title %}Review parsed profile — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Contacts', url_for('contacts_list')), ('New contact', url_for('contact_new')), ('Review', none)]) }}{% endblock %}
 {% block content %}
 <h1>Review parsed profile</h1>
 <p class="muted">Claude extracted the fields below from the pasted text. Check them, edit anything wrong, then save.</p>
 
-<form method="post" action="{{ url_for('contact_new_confirm') }}" class="stacked-form">
-    <label>Name<input type="text" name="name" required value="{{ fields.name or profile.full_name or '' }}"></label>
-    <label>Company<input type="text" name="company" value="{{ fields.company or profile.current_company or '' }}"></label>
-    <label>Title<input type="text" name="title" value="{{ fields.title or profile.current_role or '' }}"></label>
-    <label>Email<input type="email" name="email" value="{{ fields.email }}"></label>
-    <label>Phone<input type="text" name="phone" value="{{ fields.phone }}"></label>
-    <label>LinkedIn URL<input type="url" name="linkedin_url" value="{{ fields.linkedin_url }}"></label>
-    <label>Bio / background<textarea name="bio" rows="4">{{ fields.bio or profile.summary }}</textarea></label>
+<form method="post" action="{{ url_for('contact_new_confirm') }}">
+    <div class="card stacked-form">
+        <label>Name<input type="text" name="name" required value="{{ fields.name or profile.full_name or '' }}"></label>
+        <label>Company<input type="text" name="company" value="{{ fields.company or profile.current_company or '' }}"></label>
+        <label>Title<input type="text" name="title" value="{{ fields.title or profile.current_role or '' }}"></label>
+        <label>Email<input type="email" name="email" value="{{ fields.email or profile.email or '' }}"></label>
+        <label>Phone<input type="text" name="phone" value="{{ fields.phone or profile.phone or '' }}"></label>
+        <label>LinkedIn URL<input type="url" name="linkedin_url" value="{{ fields.linkedin_url or profile.linkedin_url or '' }}"></label>
+        <label>Bio / background<textarea name="bio" rows="4">{{ fields.bio or profile.summary }}</textarea></label>
+    </div>
 
-    <section>
+    <section class="card">
         <h2>Parsed from LinkedIn (read-only)</h2>
 
         <h3>Work history</h3>
@@ -39,6 +43,48 @@
         <h3>Skills</h3>
         <p>{{ profile.skills | join(', ') if profile.skills else 'None found.' }}</p>
     </section>
+
+    {% if node_suggestions %}
+    <section class="card">
+        <h2>Suggested node compatibility</h2>
+        <p class="muted">Based on this profile alone (no interactions logged yet). Edit any score or rationale, or clear a score to skip saving that one.</p>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead><tr><th>Node</th><th>Score</th><th>Rationale</th></tr></thead>
+                <tbody>
+                    {% for s in node_suggestions %}
+                    <tr>
+                        <td>{{ s.node_name }}<input type="hidden" name="node_id" value="{{ s.node_id }}"></td>
+                        <td><input type="number" name="score" min="0" max="100" value="{{ s.score }}" style="width:4em;"></td>
+                        <td><input type="text" name="rationale" value="{{ s.rationale }}" style="width:100%;"></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+
+    {% if company_names %}
+    <section class="card">
+        <h2>Companies from work history</h2>
+        <p class="muted">Add any of these to the companies list, and mark which one (if any) is the current employer to link on this contact.</p>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead><tr><th>Company</th><th>Add to companies list</th><th>Current employer</th></tr></thead>
+                <tbody>
+                    {% for name in company_names %}
+                    <tr>
+                        <td>{{ name }}</td>
+                        <td><input type="checkbox" name="company_add" value="{{ name }}" checked></td>
+                        <td><input type="radio" name="current_company" value="{{ name }}" {% if current_company_match == name %}checked{% endif %}></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
 
     <input type="hidden" name="linkedin_text" value="{{ linkedin_text }}">
     <input type="hidden" name="profile_json" value='{{ profile_json }}'>
