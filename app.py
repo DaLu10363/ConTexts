@@ -268,12 +268,18 @@ def _contact_detail_context(db, contact_id):
         (contact_id,),
     ).fetchall()
     profile = json.loads(contact["profile_data"]) if contact["profile_data"] else None
+    radar_labels = [s["name"] for s in scores]
+    radar_values = [s["score"] if s["score"] is not None else 0 for s in scores]
+    radar_unscored = [s["name"] for s in scores if s["score"] is None]
     return {
         "contact": contact,
         "interactions": interactions,
         "scores": scores,
         "ideas": ideas,
         "profile": profile,
+        "radar_labels": radar_labels,
+        "radar_values": radar_values,
+        "radar_unscored": radar_unscored,
         "today": date.today().isoformat(),
     }
 
