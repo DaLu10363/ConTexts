@@ -14,12 +14,14 @@ app = Flask(__name__)
 
 def get_db():
     if "db" not in g:
-        is_new = not DB_PATH.exists()
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         g.db = sqlite3.connect(DB_PATH)
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
-        if is_new:
+        has_schema = g.db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'contacts'"
+        ).fetchone()
+        if not has_schema:
             g.db.executescript((BASE_DIR / "schema.sql").read_text())
             g.db.commit()
     return g.db
