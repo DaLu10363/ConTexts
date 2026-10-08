@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Delete {{ contact.name }} — ConTexts{% endblock %}
+{% block content %}
+<h1>Delete {{ contact.name }}?</h1>
+<p class="error">This permanently deletes this contact and cannot be undone. It will also delete:</p>
+<ul class="plain-list">
+    <li>{{ counts.interactions }} logged interaction{{ 's' if counts.interactions != 1 else '' }}</li>
+    <li>{{ counts.node_scores }} node score{{ 's' if counts.node_scores != 1 else '' }}</li>
+    <li>{{ counts.ideas }} idea link{{ 's' if counts.ideas != 1 else '' }}</li>
+</ul>
+<form method="post" class="button-row">
+    <button type="submit">Yes, delete permanently</button>
+    <a href="{{ url_for('contact_detail', contact_id=contact.id) }}"><button type="button">Cancel</button></a>
+</form>
+{% endblock %}

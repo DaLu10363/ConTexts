@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}{{ contact.name }} — ConTexts{% endblock %}
 {% block content %}
-<h1>{{ contact.name }}</h1>
+<div class="button-row" style="justify-content: space-between;">
+    <h1>{{ contact.name }}</h1>
+    <a href="{{ url_for('delete_contact', contact_id=contact.id) }}">Delete contact</a>
+</div>
 <p class="muted">
     {{ contact.title or '' }}{% if contact.title and contact.company %} at {% endif %}{{ contact.company or '' }}
 </p>

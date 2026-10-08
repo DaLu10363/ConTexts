@@ -4,7 +4,7 @@ import sqlite3
 from datetime import date
 from pathlib import Path
 
-from flask import Flask, g, redirect, render_template, request, url_for
+from flask import Flask, abort, g, redirect, render_template, request, url_for
 
 import llm
 
@@ -237,6 +237,8 @@ def _contact_detail_context(db, contact_id):
     contact = db.execute(
         "SELECT * FROM contacts WHERE id = ?", (contact_id,)
     ).fetchone()
+    if contact is None:
+        abort(404)
     interactions = db.execute(
         "SELECT * FROM interactions WHERE contact_id = ? ORDER BY occurred_at DESC",
         (contact_id,),
@@ -270,6 +272,34 @@ def contact_detail(contact_id):
     return render_template(
         "contact_detail.html", **_contact_detail_context(db, contact_id)
     )
+
+
+@app.route("/contacts/<int:contact_id>/delete", methods=["GET", "POST"])
+def delete_contact(contact_id):
+    db = get_db()
+    contact = db.execute(
+        "SELECT * FROM contacts WHERE id = ?", (contact_id,)
+    ).fetchone()
+    if contact is None:
+        return redirect(url_for("contacts_list"))
+
+    if request.method == "POST":
+        db.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
+        db.commit()
+        return redirect(url_for("contacts_list"))
+
+    counts = {
+        "interactions": db.execute(
+            "SELECT COUNT(*) FROM interactions WHERE contact_id = ?", (contact_id,)
+        ).fetchone()[0],
+        "node_scores": db.execute(
+            "SELECT COUNT(*) FROM contact_nodes WHERE contact_id = ?", (contact_id,)
+        ).fetchone()[0],
+        "ideas": db.execute(
+            "SELECT COUNT(*) FROM idea_contacts WHERE contact_id = ?", (contact_id,)
+        ).fetchone()[0],
+    }
+    return render_template("contact_delete_confirm.html", contact=contact, counts=counts)
 
 
 @app.route("/contacts/<int:contact_id>/interactions/review", methods=["POST"])
@@ -357,6 +387,8 @@ def suggest_node_scores(contact_id):
     contact = db.execute(
         "SELECT * FROM contacts WHERE id = ?", (contact_id,)
     ).fetchone()
+    if contact is None:
+        abort(404)
     interactions = db.execute(
         "SELECT * FROM interactions WHERE contact_id = ? ORDER BY occurred_at",
         (contact_id,),
