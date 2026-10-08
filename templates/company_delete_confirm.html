@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Delete {{ company.name }} — ConTexts{% endblock %}
+{% block content %}
+<h1>Delete {{ company.name }}?</h1>
+<p class="error">This permanently deletes this company and cannot be undone. It will also:</p>
+<ul class="plain-list">
+    <li>Unlink {{ counts.contacts }} contact{{ 's' if counts.contacts != 1 else '' }} from this company (contacts themselves are kept)</li>
+    <li>Delete {{ counts.node_scores }} node score{{ 's' if counts.node_scores != 1 else '' }}</li>
+</ul>
+<form method="post" class="button-row">
+    <button type="submit">Yes, delete permanently</button>
+    <a href="{{ url_for('company_detail', company_id=company.id) }}"><button type="button">Cancel</button></a>
+</form>
+{% endblock %}

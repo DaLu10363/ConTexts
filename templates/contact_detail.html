@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as macros %}
 {% block title %}{{ contact.name }} — ConTexts{% endblock %}
 {% block content %}
 <div class="button-row" style="justify-content: space-between;">
@@ -6,7 +7,10 @@
     <a href="{{ url_for('delete_contact', contact_id=contact.id) }}">Delete contact</a>
 </div>
 <p class="muted">
-    {{ contact.title or '' }}{% if contact.title and contact.company %} at {% endif %}{{ contact.company or '' }}
+    {{ contact.title or '' }}
+    {% if contact.title and contact.company %} at {% endif %}
+    {% if company %}<a href="{{ url_for('company_detail', company_id=company.id) }}">{{ company.name }}</a>
+    {% else %}{{ contact.company or '' }}{% endif %}
 </p>
 <ul class="plain-list">
     {% if contact.email %}<li>Email: {{ contact.email }}</li>{% endif %}
@@ -14,6 +18,26 @@
     {% if contact.linkedin_url %}<li>LinkedIn: <a href="{{ contact.linkedin_url }}">{{ contact.linkedin_url }}</a></li>{% endif %}
 </ul>
 {% if contact.bio %}<p>{{ contact.bio }}</p>{% endif %}
+
+<section>
+    <h2>Company</h2>
+    {% if company %}
+    <p><a href="{{ url_for('company_detail', company_id=company.id) }}">{{ company.name }}</a></p>
+    {% else %}
+    <p class="muted">Not linked to a company record.</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('set_contact_company', contact_id=contact.id) }}" class="stacked-form">
+        <label>Company name (existing or new — leave blank to unlink)
+            <input type="text" name="company_name" list="company-options" value="{{ company.name if company else '' }}">
+            <datalist id="company-options">
+                {% for co in all_companies %}
+                <option value="{{ co.name }}">
+                {% endfor %}
+            </datalist>
+        </label>
+        <button type="submit">Save</button>
+    </form>
+</section>
 
 {% if profile %}
 <section>
@@ -40,9 +64,7 @@
 <section>
     <h2>Node compatibility</h2>
     {% if node_score_error %}<p class="error">{{ node_score_error }}</p>{% endif %}
-    <div class="radar-wrap">
-        <canvas id="node-radar" width="360" height="360"></canvas>
-    </div>
+    {{ macros.radar_chart('node-radar', radar_labels, radar_values, contact.name) }}
     {% if radar_unscored %}
     <p class="muted">Not yet scored (shown as 0): {{ radar_unscored | join(', ') }}</p>
     {% endif %}
@@ -114,67 +136,4 @@
         {% endfor %}
     </ul>
 </section>
-{% endblock %}
-
-{% block scripts %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
-<script>
-(function () {
-    var palette = {
-        light: { series: '#2a78d6', fill: 'rgba(42, 120, 214, 0.15)', grid: '#e1e0d9', angle: '#e1e0d9', tick: '#898781', label: '#0b0b0b' },
-        dark:  { series: '#3987e5', fill: 'rgba(57, 135, 229, 0.20)', grid: '#2c2c2a', angle: '#2c2c2a', tick: '#898781', label: '#ffffff' }
-    };
-    var mql = window.matchMedia('(prefers-color-scheme: dark)');
-    var labels = {{ radar_labels | tojson }};
-    var values = {{ radar_values | tojson }};
-    var ctx = document.getElementById('node-radar');
-    var chart = null;
-
-    function colors() {
-        return mql.matches ? palette.dark : palette.light;
-    }
-
-    function render() {
-        var c = colors();
-        var config = {
-            type: 'radar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: '{{ contact.name }}',
-                    data: values,
-                    borderColor: c.series,
-                    backgroundColor: c.fill,
-                    pointBackgroundColor: c.series,
-                    borderWidth: 2
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: true,
-                plugins: { legend: { display: false } },
-                scales: {
-                    r: {
-                        min: 0,
-                        max: 100,
-                        ticks: { stepSize: 25, color: c.tick, backdropColor: 'transparent' },
-                        grid: { color: c.grid },
-                        angleLines: { color: c.angle },
-                        pointLabels: { color: c.label, font: { size: 12 } }
-                    }
-                }
-            }
-        };
-        if (chart) {
-            chart.destroy();
-        }
-        if (labels.length) {
-            chart = new Chart(ctx, config);
-        }
-    }
-
-    render();
-    mql.addEventListener('change', render);
-})();
-</script>
 {% endblock %}

@@ -1,0 +1,64 @@
+{% macro radar_chart(canvas_id, labels, values, series_name) %}
+<div class="radar-wrap">
+    <canvas id="{{ canvas_id }}" width="360" height="360"></canvas>
+</div>
+<script>
+(function () {
+    var palette = {
+        light: { series: '#2a78d6', fill: 'rgba(42, 120, 214, 0.15)', grid: '#e1e0d9', angle: '#e1e0d9', tick: '#898781', label: '#0b0b0b' },
+        dark:  { series: '#3987e5', fill: 'rgba(57, 135, 229, 0.20)', grid: '#2c2c2a', angle: '#2c2c2a', tick: '#898781', label: '#ffffff' }
+    };
+    var mql = window.matchMedia('(prefers-color-scheme: dark)');
+    var labels = {{ labels | tojson }};
+    var values = {{ values | tojson }};
+    var ctx = document.getElementById({{ canvas_id | tojson }});
+    var chart = null;
+
+    function colors() {
+        return mql.matches ? palette.dark : palette.light;
+    }
+
+    function render() {
+        var c = colors();
+        var config = {
+            type: 'radar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: {{ series_name | tojson }},
+                    data: values,
+                    borderColor: c.series,
+                    backgroundColor: c.fill,
+                    pointBackgroundColor: c.series,
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    r: {
+                        min: 0,
+                        max: 100,
+                        ticks: { stepSize: 25, color: c.tick, backdropColor: 'transparent' },
+                        grid: { color: c.grid },
+                        angleLines: { color: c.angle },
+                        pointLabels: { color: c.label, font: { size: 12 } }
+                    }
+                }
+            }
+        };
+        if (chart) {
+            chart.destroy();
+        }
+        if (labels.length) {
+            chart = new Chart(ctx, config);
+        }
+    }
+
+    render();
+    mql.addEventListener('change', render);
+})();
+</script>
+{% endmacro %}

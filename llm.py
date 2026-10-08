@@ -266,3 +266,50 @@ def score_idea_fit(idea, contacts_data, nodes) -> IdeaFitResult:
         output_format=IdeaFitResult,
     )
     return response.parsed_output
+
+
+def score_company_nodes(company, contacts_at_company, nodes) -> NodeScoringResult:
+    if contacts_at_company:
+        people_lines = []
+        for c in contacts_at_company:
+            line = f"- {c['name']}"
+            if c["title"]:
+                line += f", {c['title']}"
+            if c["bio"]:
+                line += f": {c['bio']}"
+            people_lines.append(line)
+        people_text = "\n".join(people_lines)
+    else:
+        people_text = "(no contacts logged at this company yet)"
+
+    node_defs = "\n".join(f"- {n['name']}: {n['description'] or ''}" for n in nodes)
+
+    response = _client().messages.parse(
+        model=MODEL,
+        max_tokens=2048,
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    "You are scoring a company's fit against a set of role "
+                    "classifications, the same ones used for individual "
+                    "contacts (e.g. a company itself can be an 'Investor' or "
+                    "a 'Supplier'). For EACH classification listed, give a "
+                    "0-100 compatibility score (0 = clearly not a fit, "
+                    "100 = ideal fit) and a one-sentence rationale grounded "
+                    "in specific facts given below. Be conservative: if "
+                    "there isn't enough information to judge a "
+                    "classification, score it low and say so in the "
+                    "rationale rather than guessing. Use the exact "
+                    "classification name given, unchanged, in node_name.\n\n"
+                    f"Company: {company['name']}\n"
+                    f"Description: {company['description'] or '(none)'}\n"
+                    f"Website: {company['website'] or '(none)'}\n\n"
+                    f"Known contacts at this company:\n{people_text}\n\n"
+                    f"Classifications to score:\n{node_defs}"
+                ),
+            }
+        ],
+        output_format=NodeScoringResult,
+    )
+    return response.parsed_output

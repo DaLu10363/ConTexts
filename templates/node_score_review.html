@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Review node scores — ConTexts{% endblock %}
 {% block content %}
-<h1>Review suggested scores for {{ contact.name }}</h1>
-<p class="muted">Claude's suggestions, based on the LinkedIn profile and logged interactions. Edit any score or rationale, or clear a score to skip saving that one, then confirm.</p>
+<h1>Review suggested scores for {{ subject_name }}</h1>
+<p class="muted">{{ basis_text }} Edit any score or rationale, or clear a score to skip saving that one, then confirm.</p>
 
 {% if not suggestions %}
 <p class="error">Claude didn't return any usable suggestions.</p>
 {% endif %}
 
-<form method="post" action="{{ url_for('confirm_node_scores', contact_id=contact.id) }}" class="stacked-form">
+<form method="post" action="{{ confirm_url }}" class="stacked-form">
     <table class="data-table">
         <thead><tr><th>Node</th><th>Score</th><th>Rationale</th></tr></thead>
         <tbody>

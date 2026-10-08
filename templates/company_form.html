@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}New company — ConTexts{% endblock %}
+{% block content %}
+<h1>New company</h1>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<form method="post" class="stacked-form">
+    <label>Name<input type="text" name="name" required value="{{ company.name if company else '' }}"></label>
+    <label>Website<input type="url" name="website" value="{{ company.website if company else '' }}"></label>
+    <label>Description<textarea name="description" rows="4">{{ company.description if company else '' }}</textarea></label>
+    <button type="submit">Save</button>
+</form>
+{% endblock %}

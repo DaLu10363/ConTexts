@@ -296,12 +296,20 @@ def _contact_detail_context(db, contact_id):
     radar_labels = [s["name"] for s in scores]
     radar_values = [s["score"] if s["score"] is not None else 0 for s in scores]
     radar_unscored = [s["name"] for s in scores if s["score"] is None]
+    company = None
+    if contact["company_id"] is not None:
+        company = db.execute(
+            "SELECT * FROM companies WHERE id = ?", (contact["company_id"],)
+        ).fetchone()
+    all_companies = db.execute("SELECT * FROM companies ORDER BY name").fetchall()
     return {
         "contact": contact,
         "interactions": interactions,
         "scores": scores,
         "ideas": ideas,
         "profile": profile,
+        "company": company,
+        "all_companies": all_companies,
         "radar_labels": radar_labels,
         "radar_values": radar_values,
         "radar_unscored": radar_unscored,
@@ -343,6 +351,35 @@ def delete_contact(contact_id):
         ).fetchone()[0],
     }
     return render_template("contact_delete_confirm.html", contact=contact, counts=counts)
+
+
+@app.route("/contacts/<int:contact_id>/company", methods=["POST"])
+def set_contact_company(contact_id):
+    db = get_db()
+    name = request.form.get("company_name", "").strip()
+    if not name:
+        db.execute(
+            "UPDATE contacts SET company = NULL, company_id = NULL, "
+            "updated_at = datetime('now') WHERE id = ?",
+            (contact_id,),
+        )
+    else:
+        existing = db.execute(
+            "SELECT * FROM companies WHERE lower(name) = lower(?)", (name,)
+        ).fetchone()
+        if existing is not None:
+            company_id, company_name = existing["id"], existing["name"]
+        else:
+            db.execute("INSERT INTO companies (name) VALUES (?)", (name,))
+            company_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+            company_name = name
+        db.execute(
+            "UPDATE contacts SET company = ?, company_id = ?, "
+            "updated_at = datetime('now') WHERE id = ?",
+            (company_name, company_id, contact_id),
+        )
+    db.commit()
+    return redirect(url_for("contact_detail", contact_id=contact_id))
 
 
 @app.route("/contacts/<int:contact_id>/interactions/review", methods=["POST"])
@@ -458,7 +495,11 @@ def suggest_node_scores(contact_id):
                  "score": s.score, "rationale": s.rationale}
             )
     return render_template(
-        "node_score_review.html", contact=contact, suggestions=suggestions
+        "node_score_review.html",
+        subject_name=contact["name"],
+        basis_text="Claude's suggestions, based on the LinkedIn profile and logged interactions.",
+        confirm_url=url_for("confirm_node_scores", contact_id=contact_id),
+        suggestions=suggestions,
     )
 
 
@@ -481,6 +522,188 @@ def confirm_node_scores(contact_id):
         )
     db.commit()
     return redirect(url_for("contact_detail", contact_id=contact_id))
+
+
+def _company_detail_context(db, company_id):
+    company = db.execute(
+        "SELECT * FROM companies WHERE id = ?", (company_id,)
+    ).fetchone()
+    if company is None:
+        abort(404)
+    contacts = db.execute(
+        "SELECT * FROM contacts WHERE company_id = ? ORDER BY name", (company_id,)
+    ).fetchall()
+    scores = db.execute(
+        "SELECT n.id, n.name, cn.score, cn.notes FROM nodes n "
+        "LEFT JOIN company_nodes cn ON cn.node_id = n.id AND cn.company_id = ? "
+        "ORDER BY n.name",
+        (company_id,),
+    ).fetchall()
+    radar_labels = [s["name"] for s in scores]
+    radar_values = [s["score"] if s["score"] is not None else 0 for s in scores]
+    radar_unscored = [s["name"] for s in scores if s["score"] is None]
+    return {
+        "company": company,
+        "contacts": contacts,
+        "scores": scores,
+        "radar_labels": radar_labels,
+        "radar_values": radar_values,
+        "radar_unscored": radar_unscored,
+    }
+
+
+@app.route("/companies")
+def companies_list():
+    db = get_db()
+    q = request.args.get("q", "").strip()
+    query = "SELECT * FROM companies"
+    params = []
+    if q:
+        query += " WHERE name LIKE ?"
+        params.append(f"%{q}%")
+    query += " ORDER BY name"
+    companies = db.execute(query, params).fetchall()
+    return render_template("companies_list.html", companies=companies, q=q)
+
+
+@app.route("/companies/new", methods=["GET", "POST"])
+def company_new():
+    if request.method == "POST":
+        db = get_db()
+        name = request.form.get("name", "").strip()
+        if not name:
+            return render_template(
+                "company_form.html", company=request.form, error="Name is required."
+            )
+        db.execute(
+            "INSERT INTO companies (name, description, website) VALUES (?, ?, ?)",
+            (
+                name,
+                request.form.get("description", "").strip() or None,
+                request.form.get("website", "").strip() or None,
+            ),
+        )
+        db.commit()
+        company_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        return redirect(url_for("company_detail", company_id=company_id))
+    return render_template("company_form.html", company=None)
+
+
+@app.route("/companies/<int:company_id>")
+def company_detail(company_id):
+    db = get_db()
+    return render_template(
+        "company_detail.html", **_company_detail_context(db, company_id)
+    )
+
+
+@app.route("/companies/<int:company_id>/delete", methods=["GET", "POST"])
+def delete_company(company_id):
+    db = get_db()
+    company = db.execute(
+        "SELECT * FROM companies WHERE id = ?", (company_id,)
+    ).fetchone()
+    if company is None:
+        return redirect(url_for("companies_list"))
+
+    if request.method == "POST":
+        db.execute(
+            "UPDATE contacts SET company_id = NULL, company = NULL "
+            "WHERE company_id = ?",
+            (company_id,),
+        )
+        db.execute("DELETE FROM companies WHERE id = ?", (company_id,))
+        db.commit()
+        return redirect(url_for("companies_list"))
+
+    counts = {
+        "contacts": db.execute(
+            "SELECT COUNT(*) FROM contacts WHERE company_id = ?", (company_id,)
+        ).fetchone()[0],
+        "node_scores": db.execute(
+            "SELECT COUNT(*) FROM company_nodes WHERE company_id = ?", (company_id,)
+        ).fetchone()[0],
+    }
+    return render_template(
+        "company_delete_confirm.html", company=company, counts=counts
+    )
+
+
+@app.route("/companies/<int:company_id>/nodes", methods=["POST"])
+def set_company_node(company_id):
+    db = get_db()
+    node_id = request.form["node_id"]
+    score = request.form["score"]
+    notes = request.form.get("notes", "").strip() or None
+    db.execute(
+        "INSERT INTO company_nodes (company_id, node_id, score, notes) "
+        "VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(company_id, node_id) DO UPDATE SET score = ?, notes = ?",
+        (company_id, node_id, score, notes, score, notes),
+    )
+    db.commit()
+    return redirect(url_for("company_detail", company_id=company_id))
+
+
+@app.route("/companies/<int:company_id>/nodes/suggest", methods=["POST"])
+def suggest_company_node_scores(company_id):
+    db = get_db()
+    company = db.execute(
+        "SELECT * FROM companies WHERE id = ?", (company_id,)
+    ).fetchone()
+    if company is None:
+        abort(404)
+    contacts = db.execute(
+        "SELECT * FROM contacts WHERE company_id = ? ORDER BY name", (company_id,)
+    ).fetchall()
+    nodes = db.execute("SELECT * FROM nodes ORDER BY name").fetchall()
+
+    try:
+        result = llm.score_company_nodes(company, contacts, nodes)
+    except Exception as exc:
+        return render_template(
+            "company_detail.html",
+            **_company_detail_context(db, company_id),
+            node_score_error=f"Couldn't score with Claude: {exc}",
+        )
+
+    node_by_name = {n["name"].lower(): n for n in nodes}
+    suggestions = []
+    for s in result.suggestions:
+        node = node_by_name.get(s.node_name.lower())
+        if node is not None:
+            suggestions.append(
+                {"node_id": node["id"], "node_name": node["name"],
+                 "score": s.score, "rationale": s.rationale}
+            )
+    return render_template(
+        "node_score_review.html",
+        subject_name=company["name"],
+        basis_text="Claude's suggestions, based on the company description and known contacts there.",
+        confirm_url=url_for("confirm_company_node_scores", company_id=company_id),
+        suggestions=suggestions,
+    )
+
+
+@app.route("/companies/<int:company_id>/nodes/confirm_bulk", methods=["POST"])
+def confirm_company_node_scores(company_id):
+    db = get_db()
+    node_ids = request.form.getlist("node_id")
+    scores = request.form.getlist("score")
+    rationales = request.form.getlist("rationale")
+    for node_id, score, rationale in zip(node_ids, scores, rationales):
+        score = score.strip()
+        if not score:
+            continue
+        rationale = rationale.strip() or None
+        db.execute(
+            "INSERT INTO company_nodes (company_id, node_id, score, notes) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(company_id, node_id) DO UPDATE SET score = ?, notes = ?",
+            (company_id, node_id, score, rationale, score, rationale),
+        )
+    db.commit()
+    return redirect(url_for("company_detail", company_id=company_id))
 
 
 @app.route("/nodes")
