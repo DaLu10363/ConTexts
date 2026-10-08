@@ -351,6 +351,63 @@ def set_contact_node(contact_id):
     return redirect(url_for("contact_detail", contact_id=contact_id))
 
 
+@app.route("/contacts/<int:contact_id>/nodes/suggest", methods=["POST"])
+def suggest_node_scores(contact_id):
+    db = get_db()
+    contact = db.execute(
+        "SELECT * FROM contacts WHERE id = ?", (contact_id,)
+    ).fetchone()
+    interactions = db.execute(
+        "SELECT * FROM interactions WHERE contact_id = ? ORDER BY occurred_at",
+        (contact_id,),
+    ).fetchall()
+    nodes = db.execute("SELECT * FROM nodes ORDER BY name").fetchall()
+    profile = json.loads(contact["profile_data"]) if contact["profile_data"] else None
+
+    try:
+        result = llm.score_contact_nodes(contact, profile, interactions, nodes)
+    except Exception as exc:
+        return render_template(
+            "contact_detail.html",
+            **_contact_detail_context(db, contact_id),
+            node_score_error=f"Couldn't score with Claude: {exc}",
+        )
+
+    node_by_name = {n["name"].lower(): n for n in nodes}
+    suggestions = []
+    for s in result.suggestions:
+        node = node_by_name.get(s.node_name.lower())
+        if node is not None:
+            suggestions.append(
+                {"node_id": node["id"], "node_name": node["name"],
+                 "score": s.score, "rationale": s.rationale}
+            )
+    return render_template(
+        "node_score_review.html", contact=contact, suggestions=suggestions
+    )
+
+
+@app.route("/contacts/<int:contact_id>/nodes/confirm_bulk", methods=["POST"])
+def confirm_node_scores(contact_id):
+    db = get_db()
+    node_ids = request.form.getlist("node_id")
+    scores = request.form.getlist("score")
+    rationales = request.form.getlist("rationale")
+    for node_id, score, rationale in zip(node_ids, scores, rationales):
+        score = score.strip()
+        if not score:
+            continue
+        rationale = rationale.strip() or None
+        db.execute(
+            "INSERT INTO contact_nodes (contact_id, node_id, score, notes) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(contact_id, node_id) DO UPDATE SET score = ?, notes = ?",
+            (contact_id, node_id, score, rationale, score, rationale),
+        )
+    db.commit()
+    return redirect(url_for("contact_detail", contact_id=contact_id))
+
+
 @app.route("/nodes")
 def nodes_list():
     db = get_db()

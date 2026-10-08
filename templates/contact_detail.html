@@ -36,6 +36,10 @@
 
 <section>
     <h2>Node compatibility</h2>
+    {% if node_score_error %}<p class="error">{{ node_score_error }}</p>{% endif %}
+    <form method="post" action="{{ url_for('suggest_node_scores', contact_id=contact.id) }}">
+        <button type="submit">Suggest scores with Claude</button>
+    </form>
     <table class="data-table">
         <thead><tr><th>Node</th><th>Score</th><th>Notes</th><th></th></tr></thead>
         <tbody>
