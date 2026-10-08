@@ -57,10 +57,15 @@ CREATE TABLE IF NOT EXISTS ideas (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Links a contact to an idea, with both a manual note and a Claude-suggested
+-- values/domain fit score (separate from the contact's general node scores)
 CREATE TABLE IF NOT EXISTS idea_contacts (
     idea_id INTEGER NOT NULL REFERENCES ideas(id) ON DELETE CASCADE,
     contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
     role_note TEXT,
+    fit_score INTEGER,
+    fit_rationale TEXT,
+    scored_at TEXT,
     PRIMARY KEY (idea_id, contact_id)
 );
 

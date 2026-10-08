@@ -43,6 +43,18 @@ def ensure_schema(db):
     for col, stmt in interaction_migrations.items():
         if col not in interaction_cols:
             db.execute(stmt)
+
+    idea_contact_cols = {
+        r[1] for r in db.execute("PRAGMA table_info(idea_contacts)").fetchall()
+    }
+    idea_contact_migrations = {
+        "fit_score": "ALTER TABLE idea_contacts ADD COLUMN fit_score INTEGER",
+        "fit_rationale": "ALTER TABLE idea_contacts ADD COLUMN fit_rationale TEXT",
+        "scored_at": "ALTER TABLE idea_contacts ADD COLUMN scored_at TEXT",
+    }
+    for col, stmt in idea_contact_migrations.items():
+        if col not in idea_contact_cols:
+            db.execute(stmt)
     db.commit()
 
 
@@ -490,23 +502,28 @@ def idea_new():
     return render_template("idea_form.html")
 
 
-@app.route("/ideas/<int:idea_id>")
-def idea_detail(idea_id):
-    db = get_db()
+def _idea_detail_context(db, idea_id):
     idea = db.execute("SELECT * FROM ideas WHERE id = ?", (idea_id,)).fetchone()
+    if idea is None:
+        abort(404)
     linked_contacts = db.execute(
-        "SELECT c.*, ic.role_note FROM contacts c "
+        "SELECT c.*, ic.role_note, ic.fit_score, ic.fit_rationale FROM contacts c "
         "JOIN idea_contacts ic ON ic.contact_id = c.id "
-        "WHERE ic.idea_id = ? ORDER BY c.name",
+        "WHERE ic.idea_id = ? ORDER BY ic.fit_score DESC, c.name",
         (idea_id,),
     ).fetchall()
     all_contacts = db.execute("SELECT * FROM contacts ORDER BY name").fetchall()
-    return render_template(
-        "idea_detail.html",
-        idea=idea,
-        linked_contacts=linked_contacts,
-        all_contacts=all_contacts,
-    )
+    return {
+        "idea": idea,
+        "linked_contacts": linked_contacts,
+        "all_contacts": all_contacts,
+    }
+
+
+@app.route("/ideas/<int:idea_id>")
+def idea_detail(idea_id):
+    db = get_db()
+    return render_template("idea_detail.html", **_idea_detail_context(db, idea_id))
 
 
 @app.route("/ideas/<int:idea_id>/contacts", methods=["POST"])
@@ -515,10 +532,86 @@ def link_idea_contact(idea_id):
     contact_id = request.form["contact_id"]
     role_note = request.form.get("role_note", "").strip() or None
     db.execute(
-        "INSERT OR REPLACE INTO idea_contacts (idea_id, contact_id, role_note) "
-        "VALUES (?, ?, ?)",
-        (idea_id, contact_id, role_note),
+        "INSERT INTO idea_contacts (idea_id, contact_id, role_note) "
+        "VALUES (?, ?, ?) "
+        "ON CONFLICT(idea_id, contact_id) DO UPDATE SET role_note = ?",
+        (idea_id, contact_id, role_note, role_note),
     )
+    db.execute(
+        "UPDATE ideas SET updated_at = datetime('now') WHERE id = ?", (idea_id,)
+    )
+    db.commit()
+    return redirect(url_for("idea_detail", idea_id=idea_id))
+
+
+@app.route("/ideas/<int:idea_id>/contacts/suggest", methods=["POST"])
+def suggest_idea_fit(idea_id):
+    db = get_db()
+    idea = db.execute("SELECT * FROM ideas WHERE id = ?", (idea_id,)).fetchone()
+    if idea is None:
+        abort(404)
+    contacts = db.execute("SELECT * FROM contacts ORDER BY name").fetchall()
+    if not contacts:
+        return redirect(url_for("idea_detail", idea_id=idea_id))
+
+    contacts_data = []
+    for c in contacts:
+        profile = json.loads(c["profile_data"]) if c["profile_data"] else None
+        node_scores = db.execute(
+            "SELECT n.name, cn.score FROM contact_nodes cn "
+            "JOIN nodes n ON n.id = cn.node_id WHERE cn.contact_id = ?",
+            (c["id"],),
+        ).fetchall()
+        interactions = db.execute(
+            "SELECT * FROM interactions WHERE contact_id = ? "
+            "ORDER BY occurred_at DESC LIMIT 5",
+            (c["id"],),
+        ).fetchall()
+        contacts_data.append(
+            {"contact": c, "profile": profile, "node_scores": node_scores,
+             "interactions": interactions}
+        )
+
+    try:
+        result = llm.score_idea_fit(idea, contacts_data)
+    except Exception as exc:
+        return render_template(
+            "idea_detail.html",
+            **_idea_detail_context(db, idea_id),
+            fit_error=f"Couldn't score fit with Claude: {exc}",
+        )
+
+    contacts_by_id = {c["id"]: c for c in contacts}
+    suggestions = []
+    for s in result.suggestions:
+        contact = contacts_by_id.get(s.contact_id)
+        if contact is not None:
+            suggestions.append(
+                {"contact_id": contact["id"], "contact_name": contact["name"],
+                 "score": s.score, "rationale": s.rationale}
+            )
+    suggestions.sort(key=lambda s: -s["score"])
+    return render_template("idea_fit_review.html", idea=idea, suggestions=suggestions)
+
+
+@app.route("/ideas/<int:idea_id>/contacts/confirm_bulk", methods=["POST"])
+def confirm_idea_fit(idea_id):
+    db = get_db()
+    contact_ids = request.form.getlist("contact_id")
+    scores = request.form.getlist("score")
+    rationales = request.form.getlist("rationale")
+    for contact_id, score, rationale in zip(contact_ids, scores, rationales):
+        score = score.strip()
+        if not score:
+            continue
+        rationale = rationale.strip() or None
+        db.execute(
+            "INSERT INTO idea_contacts (idea_id, contact_id, fit_score, fit_rationale, scored_at) "
+            "VALUES (?, ?, ?, ?, datetime('now')) "
+            "ON CONFLICT(idea_id, contact_id) DO UPDATE SET "
+            "fit_score = ?, fit_rationale = ?, scored_at = datetime('now')",
+            (idea_id, contact_id, score, rationale, score, rationale),
+        )
     db.execute(
         "UPDATE ideas SET updated_at = datetime('now') WHERE id = ?", (idea_id,)
     )

@@ -48,6 +48,16 @@ class NodeScoringResult(BaseModel):
     suggestions: List[NodeScoreSuggestion]
 
 
+class IdeaFitSuggestion(BaseModel):
+    contact_id: int
+    score: int
+    rationale: str
+
+
+class IdeaFitResult(BaseModel):
+    suggestions: List[IdeaFitSuggestion]
+
+
 def _client() -> anthropic.Anthropic:
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise RuntimeError(
@@ -165,5 +175,75 @@ def score_contact_nodes(contact, profile, interactions, nodes) -> NodeScoringRes
             }
         ],
         output_format=NodeScoringResult,
+    )
+    return response.parsed_output
+
+
+def score_idea_fit(idea, contacts_data) -> IdeaFitResult:
+    def format_profile(profile):
+        if not profile:
+            return "(no LinkedIn profile parsed yet)"
+        work = "; ".join(
+            f"{w['title']} at {w['company']}" for w in profile.get("work_history", [])
+        ) or "(none)"
+        skills = ", ".join(profile.get("skills", [])) or "(none)"
+        return (
+            f"Summary: {profile.get('summary') or ''}\n"
+            f"  Work history: {work}\n"
+            f"  Skills: {skills}"
+        )
+
+    def format_interactions(interactions):
+        lines = []
+        for i in interactions:
+            line = f"  - [{i['occurred_at']}] {i['summary']}"
+            if i["tone"]:
+                line += f" (tone: {i['tone']})"
+            lines.append(line)
+        return "\n".join(lines) or "  (no interactions logged)"
+
+    contact_blocks = []
+    for c in contacts_data:
+        contact = c["contact"]
+        node_scores_text = ", ".join(
+            f"{n['name']}={n['score']}" for n in c["node_scores"] if n["score"] is not None
+        ) or "(none scored yet)"
+        contact_blocks.append(
+            f"id={contact['id']}: {contact['name']}\n"
+            f"  Bio: {contact['bio'] or '(none)'}\n"
+            f"  Node scores: {node_scores_text}\n"
+            f"  {format_profile(c['profile'])}\n"
+            f"  Recent interactions:\n{format_interactions(c['interactions'])}"
+        )
+    contacts_text = "\n\n".join(contact_blocks)
+
+    response = _client().messages.parse(
+        model=MODEL,
+        max_tokens=4096,
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    "You are judging how well each contact below fits a "
+                    "specific business idea/project - not just their general "
+                    "role (investor, cofounder, etc.), but whether the "
+                    "idea's domain, values, and mission plausibly align with "
+                    "what you know about them. For example, an investor "
+                    "focused on social-justice causes is a poor fit for a "
+                    "defense/weapons startup even if they score well "
+                    "generally as an 'Investor' node, and vice versa. Give "
+                    "a 0-100 fit score and a one-sentence rationale grounded "
+                    "in specific facts below. Be conservative: if there "
+                    "isn't enough information to judge alignment, score "
+                    "around 50 and say so, rather than guessing at values "
+                    "you have no evidence for. Use the exact numeric id "
+                    "given for each contact in your response.\n\n"
+                    f"Idea: {idea['title']}\n"
+                    f"Description: {idea['description'] or '(none)'}\n\n"
+                    f"Contacts:\n{contacts_text}"
+                ),
+            }
+        ],
+        output_format=IdeaFitResult,
     )
     return response.parsed_output

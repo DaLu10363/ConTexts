@@ -10,7 +10,9 @@
     <ul class="plain-list">
         {% for c in linked_contacts %}
         <li><a href="{{ url_for('contact_detail', contact_id=c.id) }}">{{ c.name }}</a>
-            {% if c.role_note %}<span class="muted"> — {{ c.role_note }}</span>{% endif %}</li>
+            {% if c.fit_score is not none %}<strong> — fit: {{ c.fit_score }}/100</strong>{% endif %}
+            {% if c.role_note %}<span class="muted"> — {{ c.role_note }}</span>{% endif %}
+            {% if c.fit_rationale %}<p class="muted">{{ c.fit_rationale }}</p>{% endif %}</li>
         {% else %}
         <li class="muted">No contacts linked yet.</li>
         {% endfor %}
@@ -26,6 +28,15 @@
         </label>
         <label>Role / note<input type="text" name="role_note"></label>
         <button type="submit">Link contact</button>
+    </form>
+</section>
+
+<section>
+    <h2>Values/domain fit across all contacts</h2>
+    {% if fit_error %}<p class="error">{{ fit_error }}</p>{% endif %}
+    <p class="muted">Scores every contact in your database against this idea's domain and values — not just general role fit. Useful for surfacing a mismatch, e.g. a social-justice-focused investor being a poor fit for a defense/weapons idea even if they score well as "Investor".</p>
+    <form method="post" action="{{ url_for('suggest_idea_fit', idea_id=idea.id) }}">
+        <button type="submit">Suggest contact fit with Claude</button>
     </form>
 </section>
 {% endblock %}
