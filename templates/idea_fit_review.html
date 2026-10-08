@@ -2,25 +2,46 @@
 {% block title %}Review contact fit — ConTexts{% endblock %}
 {% block content %}
 <h1>Review contact fit for "{{ idea.title }}"</h1>
-<p class="muted">Claude's assessment of how well each contact's apparent values/domain align with this idea — not just their general role. Edit any score or rationale, or clear a score to skip saving that one, then confirm.</p>
+<p class="muted">Claude's assessment of how well each contact's apparent values/domain align with this idea — both overall and per node classification, scoped to this idea specifically. Edit any score or rationale, or clear a score to skip saving that one, then confirm.</p>
 
 {% if not suggestions %}
 <p class="error">Claude didn't return any usable suggestions.</p>
 {% endif %}
 
 <form method="post" action="{{ url_for('confirm_idea_fit', idea_id=idea.id) }}" class="stacked-form">
-    <table class="data-table">
-        <thead><tr><th>Contact</th><th>Fit score</th><th>Rationale</th></tr></thead>
-        <tbody>
-            {% for s in suggestions %}
-            <tr>
-                <td>{{ s.contact_name }}<input type="hidden" name="contact_id" value="{{ s.contact_id }}"></td>
-                <td><input type="number" name="score" min="0" max="100" value="{{ s.score }}" style="width:4em;"></td>
-                <td><input type="text" name="rationale" value="{{ s.rationale }}" style="width:100%;"></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    {% for s in suggestions %}
+    <fieldset style="border: 1px solid #e1e0d9; border-radius: 4px; padding: 0.75rem 1rem;">
+        <legend>{{ s.contact_name }}</legend>
+
+        <table class="data-table">
+            <thead><tr><th>Overall fit</th><th>Rationale</th></tr></thead>
+            <tbody>
+                <tr>
+                    <td><input type="hidden" name="contact_id" value="{{ s.contact_id }}">
+                        <input type="number" name="score" min="0" max="100" value="{{ s.score }}" style="width:4em;"></td>
+                    <td><input type="text" name="rationale" value="{{ s.rationale }}" style="width:100%;"></td>
+                </tr>
+            </tbody>
+        </table>
+
+        {% if s.node_scores %}
+        <table class="data-table">
+            <thead><tr><th>Node (for this idea)</th><th>Score</th><th>Rationale</th></tr></thead>
+            <tbody>
+                {% for ns in s.node_scores %}
+                <tr>
+                    <td>{{ ns.node_name }}
+                        <input type="hidden" name="node_contact_id" value="{{ s.contact_id }}">
+                        <input type="hidden" name="node_node_id" value="{{ ns.node_id }}"></td>
+                    <td><input type="number" name="node_score" min="0" max="100" value="{{ ns.score }}" style="width:4em;"></td>
+                    <td><input type="text" name="node_rationale" value="{{ ns.rationale }}" style="width:100%;"></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </fieldset>
+    {% endfor %}
     <button type="submit">Save fit scores</button>
 </form>
 {% endblock %}

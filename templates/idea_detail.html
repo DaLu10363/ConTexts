@@ -12,7 +12,16 @@
         <li><a href="{{ url_for('contact_detail', contact_id=c.id) }}">{{ c.name }}</a>
             {% if c.fit_score is not none %}<strong> — fit: {{ c.fit_score }}/100</strong>{% endif %}
             {% if c.role_note %}<span class="muted"> — {{ c.role_note }}</span>{% endif %}
-            {% if c.fit_rationale %}<p class="muted">{{ c.fit_rationale }}</p>{% endif %}</li>
+            {% if c.fit_rationale %}<p class="muted">{{ c.fit_rationale }}</p>{% endif %}
+            {% set ns_list = node_scores_by_contact.get(c.id) %}
+            {% if ns_list %}
+            <ul class="plain-list" style="margin-left: 1.5rem;">
+                {% for ns in ns_list %}
+                <li class="muted">{{ ns.node_name }} (for this idea): {{ ns.score }}/100 — {{ ns.rationale }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </li>
         {% else %}
         <li class="muted">No contacts linked yet.</li>
         {% endfor %}

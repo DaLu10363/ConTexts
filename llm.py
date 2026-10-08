@@ -48,10 +48,17 @@ class NodeScoringResult(BaseModel):
     suggestions: List[NodeScoreSuggestion]
 
 
-class IdeaFitSuggestion(BaseModel):
-    contact_id: int
+class IdeaNodeFitScore(BaseModel):
+    node_name: str
     score: int
     rationale: str
+
+
+class IdeaFitSuggestion(BaseModel):
+    contact_id: int
+    overall_score: int
+    overall_rationale: str
+    node_scores: List[IdeaNodeFitScore]
 
 
 class IdeaFitResult(BaseModel):
@@ -179,7 +186,7 @@ def score_contact_nodes(contact, profile, interactions, nodes) -> NodeScoringRes
     return response.parsed_output
 
 
-def score_idea_fit(idea, contacts_data) -> IdeaFitResult:
+def score_idea_fit(idea, contacts_data, nodes) -> IdeaFitResult:
     def format_profile(profile):
         if not profile:
             return "(no LinkedIn profile parsed yet)"
@@ -216,10 +223,11 @@ def score_idea_fit(idea, contacts_data) -> IdeaFitResult:
             f"  Recent interactions:\n{format_interactions(c['interactions'])}"
         )
     contacts_text = "\n\n".join(contact_blocks)
+    node_defs = "\n".join(f"- {n['name']}: {n['description'] or ''}" for n in nodes)
 
     response = _client().messages.parse(
         model=MODEL,
-        max_tokens=4096,
+        max_tokens=8192,
         messages=[
             {
                 "role": "user",
@@ -231,15 +239,26 @@ def score_idea_fit(idea, contacts_data) -> IdeaFitResult:
                     "what you know about them. For example, an investor "
                     "focused on social-justice causes is a poor fit for a "
                     "defense/weapons startup even if they score well "
-                    "generally as an 'Investor' node, and vice versa. Give "
-                    "a 0-100 fit score and a one-sentence rationale grounded "
-                    "in specific facts below. Be conservative: if there "
-                    "isn't enough information to judge alignment, score "
-                    "around 50 and say so, rather than guessing at values "
-                    "you have no evidence for. Use the exact numeric id "
-                    "given for each contact in your response.\n\n"
+                    "generally as an 'Investor' node, and vice versa.\n\n"
+                    "For EACH contact, give:\n"
+                    "1. An overall_score (0-100) and overall_rationale for "
+                    "how well this contact's apparent values/domain align "
+                    "with this specific idea.\n"
+                    "2. node_scores: a 0-100 score and one-sentence "
+                    "rationale for EACH of the classifications listed below, "
+                    "but scoped specifically to this idea - e.g. a contact "
+                    "might generally be a strong 'Investor' but a weak "
+                    "'Investor' specifically for this idea if the domain "
+                    "conflicts with their apparent values. Use the exact "
+                    "classification name given, unchanged, in node_name.\n\n"
+                    "Be conservative: if there isn't enough information to "
+                    "judge alignment, score around 50 and say so, rather "
+                    "than guessing at values you have no evidence for. Use "
+                    "the exact numeric id given for each contact in your "
+                    "response.\n\n"
                     f"Idea: {idea['title']}\n"
                     f"Description: {idea['description'] or '(none)'}\n\n"
+                    f"Classifications to score per contact:\n{node_defs}\n\n"
                     f"Contacts:\n{contacts_text}"
                 ),
             }

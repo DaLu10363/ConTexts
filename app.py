@@ -17,11 +17,36 @@ app.add_template_filter(json.loads, name="from_json")
 
 
 def ensure_schema(db):
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS companies ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, "
+        "description TEXT, website TEXT, "
+        "created_at TEXT NOT NULL DEFAULT (datetime('now')), "
+        "updated_at TEXT NOT NULL DEFAULT (datetime('now')))"
+    )
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS company_nodes ("
+        "company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE, "
+        "node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, "
+        "score INTEGER NOT NULL CHECK (score BETWEEN 0 AND 100), notes TEXT, "
+        "PRIMARY KEY (company_id, node_id))"
+    )
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS idea_contact_node_scores ("
+        "idea_id INTEGER NOT NULL REFERENCES ideas(id) ON DELETE CASCADE, "
+        "contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE, "
+        "node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, "
+        "score INTEGER NOT NULL CHECK (score BETWEEN 0 AND 100), "
+        "rationale TEXT, scored_at TEXT, "
+        "PRIMARY KEY (idea_id, contact_id, node_id))"
+    )
+
     contact_cols = {r[1] for r in db.execute("PRAGMA table_info(contacts)").fetchall()}
     contact_migrations = {
         "linkedin_raw_text": "ALTER TABLE contacts ADD COLUMN linkedin_raw_text TEXT",
         "profile_data": "ALTER TABLE contacts ADD COLUMN profile_data TEXT",
         "profile_parsed_at": "ALTER TABLE contacts ADD COLUMN profile_parsed_at TEXT",
+        "company_id": "ALTER TABLE contacts ADD COLUMN company_id INTEGER",
     }
     for col, stmt in contact_migrations.items():
         if col not in contact_cols:
@@ -519,10 +544,21 @@ def _idea_detail_context(db, idea_id):
         (idea_id,),
     ).fetchall()
     all_contacts = db.execute("SELECT * FROM contacts ORDER BY name").fetchall()
+    node_score_rows = db.execute(
+        "SELECT icns.contact_id, n.name AS node_name, icns.score, icns.rationale "
+        "FROM idea_contact_node_scores icns "
+        "JOIN nodes n ON n.id = icns.node_id "
+        "WHERE icns.idea_id = ? ORDER BY icns.score DESC",
+        (idea_id,),
+    ).fetchall()
+    node_scores_by_contact = {}
+    for row in node_score_rows:
+        node_scores_by_contact.setdefault(row["contact_id"], []).append(row)
     return {
         "idea": idea,
         "linked_contacts": linked_contacts,
         "all_contacts": all_contacts,
+        "node_scores_by_contact": node_scores_by_contact,
     }
 
 
@@ -560,6 +596,9 @@ def suggest_idea_fit(idea_id):
     if not contacts:
         return redirect(url_for("idea_detail", idea_id=idea_id))
 
+    nodes = db.execute("SELECT * FROM nodes ORDER BY name").fetchall()
+    node_by_name = {n["name"].lower(): n for n in nodes}
+
     contacts_data = []
     for c in contacts:
         profile = json.loads(c["profile_data"]) if c["profile_data"] else None
@@ -579,7 +618,7 @@ def suggest_idea_fit(idea_id):
         )
 
     try:
-        result = llm.score_idea_fit(idea, contacts_data)
+        result = llm.score_idea_fit(idea, contacts_data, nodes)
     except Exception as exc:
         return render_template(
             "idea_detail.html",
@@ -591,11 +630,21 @@ def suggest_idea_fit(idea_id):
     suggestions = []
     for s in result.suggestions:
         contact = contacts_by_id.get(s.contact_id)
-        if contact is not None:
-            suggestions.append(
-                {"contact_id": contact["id"], "contact_name": contact["name"],
-                 "score": s.score, "rationale": s.rationale}
-            )
+        if contact is None:
+            continue
+        node_scores = []
+        for ns in s.node_scores:
+            node = node_by_name.get(ns.node_name.lower())
+            if node is not None:
+                node_scores.append(
+                    {"node_id": node["id"], "node_name": node["name"],
+                     "score": ns.score, "rationale": ns.rationale}
+                )
+        suggestions.append(
+            {"contact_id": contact["id"], "contact_name": contact["name"],
+             "score": s.overall_score, "rationale": s.overall_rationale,
+             "node_scores": node_scores}
+        )
     suggestions.sort(key=lambda s: -s["score"])
     return render_template("idea_fit_review.html", idea=idea, suggestions=suggestions)
 
@@ -618,6 +667,27 @@ def confirm_idea_fit(idea_id):
             "fit_score = ?, fit_rationale = ?, scored_at = datetime('now')",
             (idea_id, contact_id, score, rationale, score, rationale),
         )
+
+    node_contact_ids = request.form.getlist("node_contact_id")
+    node_ids = request.form.getlist("node_node_id")
+    node_scores = request.form.getlist("node_score")
+    node_rationales = request.form.getlist("node_rationale")
+    for contact_id, node_id, score, rationale in zip(
+        node_contact_ids, node_ids, node_scores, node_rationales
+    ):
+        score = score.strip()
+        if not score:
+            continue
+        rationale = rationale.strip() or None
+        db.execute(
+            "INSERT INTO idea_contact_node_scores "
+            "(idea_id, contact_id, node_id, score, rationale, scored_at) "
+            "VALUES (?, ?, ?, ?, ?, datetime('now')) "
+            "ON CONFLICT(idea_id, contact_id, node_id) DO UPDATE SET "
+            "score = ?, rationale = ?, scored_at = datetime('now')",
+            (idea_id, contact_id, node_id, score, rationale, score, rationale),
+        )
+
     db.execute(
         "UPDATE ideas SET updated_at = datetime('now') WHERE id = ?", (idea_id,)
     )
