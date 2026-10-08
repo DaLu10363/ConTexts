@@ -28,11 +28,11 @@ framework — minimal surface area for a single-user local tool.
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-flask --app app init-db
 flask --app app run --debug
 ```
 
-Then open http://127.0.0.1:5000.
+Then open http://127.0.0.1:5000. The database and schema are created automatically on
+first run. To wipe and reinitialize an existing database, run `flask --app app init-db`.
 
 ## Database location
 
