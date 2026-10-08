@@ -8,6 +8,10 @@
 </div>
 {% if company.website %}<p class="muted"><a href="{{ company.website }}">{{ company.website }}</a></p>{% endif %}
 {% if company.description %}<p>{{ company.description }}</p>{% endif %}
+{% if research_error %}<p class="error">{{ research_error }}</p>{% endif %}
+<form method="post" action="{{ url_for('suggest_company_research', company_id=company.id) }}">
+    <button type="submit">Research with Claude</button>
+</form>
 
 <section>
     <h2>Contacts at this company</h2>

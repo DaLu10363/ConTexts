@@ -597,6 +597,48 @@ def company_detail(company_id):
     )
 
 
+@app.route("/companies/<int:company_id>/research", methods=["POST"])
+def suggest_company_research(company_id):
+    db = get_db()
+    company = db.execute(
+        "SELECT * FROM companies WHERE id = ?", (company_id,)
+    ).fetchone()
+    if company is None:
+        abort(404)
+
+    try:
+        result = llm.research_company(company["name"], company["website"])
+    except Exception as exc:
+        return render_template(
+            "company_detail.html",
+            **_company_detail_context(db, company_id),
+            research_error=f"Couldn't research with Claude: {exc}",
+        )
+
+    return render_template(
+        "company_research_review.html",
+        company=company,
+        description=result.description,
+        website=result.website or company["website"] or "",
+    )
+
+
+@app.route("/companies/<int:company_id>/research/confirm", methods=["POST"])
+def confirm_company_research(company_id):
+    db = get_db()
+    db.execute(
+        "UPDATE companies SET description = ?, website = ?, "
+        "updated_at = datetime('now') WHERE id = ?",
+        (
+            request.form.get("description", "").strip() or None,
+            request.form.get("website", "").strip() or None,
+            company_id,
+        ),
+    )
+    db.commit()
+    return redirect(url_for("company_detail", company_id=company_id))
+
+
 @app.route("/companies/<int:company_id>/delete", methods=["GET", "POST"])
 def delete_company(company_id):
     db = get_db()

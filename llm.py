@@ -1,3 +1,4 @@
+import json
 import os
 from typing import List, Optional
 
@@ -46,6 +47,11 @@ class NodeScoreSuggestion(BaseModel):
 
 class NodeScoringResult(BaseModel):
     suggestions: List[NodeScoreSuggestion]
+
+
+class CompanyResearch(BaseModel):
+    description: str
+    website: Optional[str] = None
 
 
 class IdeaNodeFitScore(BaseModel):
@@ -313,3 +319,50 @@ def score_company_nodes(company, contacts_at_company, nodes) -> NodeScoringResul
         output_format=NodeScoringResult,
     )
     return response.parsed_output
+
+
+def research_company(name: str, website: Optional[str] = None) -> CompanyResearch:
+    context = (
+        f"Their known website is {website}."
+        if website
+        else "No website is known yet - try to find their official site."
+    )
+    response = _client().messages.create(
+        model=MODEL,
+        max_tokens=2048,
+        tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 5}],
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    f'Research the company "{name}" using web search. '
+                    f"{context} Write a concise 2-4 sentence description "
+                    "covering what they do, their industry, and any "
+                    "publicly stated mission or values (useful later for "
+                    "judging whether this company aligns with a potential "
+                    "investor's or partner's values). Base this only on "
+                    "what you actually find - do not invent details. If "
+                    "you cannot find reliable information, say so briefly "
+                    "in the description instead of guessing.\n\n"
+                    "After searching, respond with ONLY a JSON object, no "
+                    "other text, no markdown code fences, in exactly this "
+                    'shape: {"description": "...", "website": "https://... '
+                    'or null"}'
+                ),
+            }
+        ],
+    )
+    texts = [b.text for b in response.content if b.type == "text"]
+    raw = texts[-1].strip() if texts else ""
+    if raw.startswith("```"):
+        raw = raw.strip("`")
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.strip()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"Claude's response wasn't valid JSON: {raw[:200]!r}"
+        ) from exc
+    return CompanyResearch(**data)
