@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}ConTexts{% endblock %}
+{% block content %}
+<h1>ConTexts</h1>
+<div class="stats">
+    <div class="stat"><span class="num">{{ counts.contacts }}</span> contacts</div>
+    <div class="stat"><span class="num">{{ counts.interactions }}</span> interactions logged</div>
+    <div class="stat"><span class="num">{{ counts.ideas }}</span> ideas</div>
+</div>
+
+<section>
+    <h2>Recently updated contacts</h2>
+    <ul class="plain-list">
+        {% for c in contacts %}
+        <li><a href="{{ url_for('contact_detail', contact_id=c.id) }}">{{ c.name }}</a>
+            {% if c.company %}<span class="muted"> — {{ c.company }}</span>{% endif %}</li>
+        {% else %}
+        <li class="muted">No contacts yet. <a href="{{ url_for('contact_new') }}">Add one</a>.</li>
+        {% endfor %}
+    </ul>
+</section>
+
+<section>
+    <h2>Active ideas</h2>
+    <ul class="plain-list">
+        {% for i in ideas %}
+        <li><a href="{{ url_for('idea_detail', idea_id=i.id) }}">{{ i.title }}</a></li>
+        {% else %}
+        <li class="muted">No ideas yet. <a href="{{ url_for('idea_new') }}">Add one</a>.</li>
+        {% endfor %}
+    </ul>
+</section>
+{% endblock %}

@@ -1,0 +1,64 @@
+-- ConTexts database schema
+
+CREATE TABLE IF NOT EXISTS contacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    company TEXT,
+    title TEXT,
+    email TEXT,
+    phone TEXT,
+    linkedin_url TEXT,
+    bio TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Role classifications a contact can qualify for (Investor, Supplier, Cofounder, ...)
+CREATE TABLE IF NOT EXISTS nodes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT
+);
+
+-- A contact's compatibility score (0-100) against a given node/classification
+CREATE TABLE IF NOT EXISTS contact_nodes (
+    contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    score INTEGER NOT NULL CHECK (score BETWEEN 0 AND 100),
+    notes TEXT,
+    PRIMARY KEY (contact_id, node_id)
+);
+
+-- Timestamped notes/logs captured after a call or meeting
+CREATE TABLE IF NOT EXISTS interactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    occurred_at TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    next_steps TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Business/project ideas, linked to the contacts relevant to pursuing them
+CREATE TABLE IF NOT EXISTS ideas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS idea_contacts (
+    idea_id INTEGER NOT NULL REFERENCES ideas(id) ON DELETE CASCADE,
+    contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    role_note TEXT,
+    PRIMARY KEY (idea_id, contact_id)
+);
+
+INSERT OR IGNORE INTO nodes (name, description) VALUES
+    ('Investor', 'Provides or facilitates funding'),
+    ('Supplier', 'Provides goods or services the business depends on'),
+    ('Cofounder', 'Potential or actual co-founder'),
+    ('Consultant', 'Provides expert advice'),
+    ('Contributor/Contractor', 'Executes defined work on a contract basis');

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Ideas — ConTexts{% endblock %}
+{% block content %}
+<h1>Ideas</h1>
+<p><a href="{{ url_for('idea_new') }}">+ New idea</a></p>
+<table class="data-table">
+    <thead><tr><th>Title</th><th>Status</th><th>Updated</th></tr></thead>
+    <tbody>
+        {% for i in ideas %}
+        <tr>
+            <td><a href="{{ url_for('idea_detail', idea_id=i.id) }}">{{ i.title }}</a></td>
+            <td>{{ i.status }}</td>
+            <td>{{ i.updated_at }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3" class="muted">No ideas yet.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

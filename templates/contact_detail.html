@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ contact.name }} — ConTexts{% endblock %}
+{% block content %}
+<h1>{{ contact.name }}</h1>
+<p class="muted">
+    {{ contact.title or '' }}{% if contact.title and contact.company %} at {% endif %}{{ contact.company or '' }}
+</p>
+<ul class="plain-list">
+    {% if contact.email %}<li>Email: {{ contact.email }}</li>{% endif %}
+    {% if contact.phone %}<li>Phone: {{ contact.phone }}</li>{% endif %}
+    {% if contact.linkedin_url %}<li>LinkedIn: <a href="{{ contact.linkedin_url }}">{{ contact.linkedin_url }}</a></li>{% endif %}
+</ul>
+{% if contact.bio %}<p>{{ contact.bio }}</p>{% endif %}
+
+<section>
+    <h2>Node compatibility</h2>
+    <table class="data-table">
+        <thead><tr><th>Node</th><th>Score</th><th>Notes</th><th></th></tr></thead>
+        <tbody>
+            {% for s in scores %}
+            {% set form_id = "node-form-" ~ s.id %}
+            <tr>
+                <td>{{ s.name }}</td>
+                <td><input form="{{ form_id }}" type="number" name="score" min="0" max="100" value="{{ s.score if s.score is not none else '' }}" style="width:4em;"></td>
+                <td><input form="{{ form_id }}" type="text" name="notes" value="{{ s.notes or '' }}"></td>
+                <td>
+                    <form id="{{ form_id }}" method="post" action="{{ url_for('set_contact_node', contact_id=contact.id) }}">
+                        <input type="hidden" name="node_id" value="{{ s.id }}">
+                        <button type="submit">Save</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section>
+    <h2>Ideas linked to this contact</h2>
+    <ul class="plain-list">
+        {% for i in ideas %}
+        <li><a href="{{ url_for('idea_detail', idea_id=i.id) }}">{{ i.title }}</a></li>
+        {% else %}
+        <li class="muted">None yet.</li>
+        {% endfor %}
+    </ul>
+</section>
+
+<section>
+    <h2>Log a new interaction</h2>
+    <form method="post" action="{{ url_for('add_interaction', contact_id=contact.id) }}" class="stacked-form">
+        <label>Date<input type="date" name="occurred_at" value="{{ today }}"></label>
+        <label>What was discussed<textarea name="summary" rows="3" required></textarea></label>
+        <label>Next steps<textarea name="next_steps" rows="2"></textarea></label>
+        <button type="submit">Add interaction</button>
+    </form>
+</section>
+
+<section>
+    <h2>Interaction history</h2>
+    <ul class="timeline">
+        {% for n in interactions %}
+        <li>
+            <strong>{{ n.occurred_at }}</strong>
+            <p>{{ n.summary }}</p>
+            {% if n.next_steps %}<p class="muted">Next: {{ n.next_steps }}</p>{% endif %}
+        </li>
+        {% else %}
+        <li class="muted">No interactions logged yet.</li>
+        {% endfor %}
+    </ul>
+</section>
+{% endblock %}

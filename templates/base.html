@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>{% block title %}ConTexts{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="topnav">
+        <a href="{{ url_for('index') }}" class="brand">ConTexts</a>
+        <a href="{{ url_for('contacts_list') }}">Contacts</a>
+        <a href="{{ url_for('nodes_list') }}">Nodes</a>
+        <a href="{{ url_for('ideas_list') }}">Ideas</a>
+    </nav>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

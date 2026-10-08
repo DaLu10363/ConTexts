@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Nodes — ConTexts{% endblock %}
+{% block content %}
+<h1>Nodes</h1>
+<p class="muted">Role classifications contacts can be scored against (0-100 compatibility).</p>
+
+<table class="data-table">
+    <thead><tr><th>Name</th><th>Description</th><th>Contacts</th></tr></thead>
+    <tbody>
+        {% for n in nodes %}
+        <tr>
+            <td>{{ n.name }}</td>
+            <td>{{ n.description or '' }}</td>
+            <td><a href="{{ url_for('contacts_list', node_id=n.id) }}">{{ n.contact_count }}</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h2>Add a node</h2>
+<form method="post" action="{{ url_for('node_new') }}" class="stacked-form">
+    <label>Name<input type="text" name="name" required></label>
+    <label>Description<input type="text" name="description"></label>
+    <button type="submit">Save</button>
+</form>
+{% endblock %}

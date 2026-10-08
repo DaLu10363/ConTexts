@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ idea.title }} — ConTexts{% endblock %}
+{% block content %}
+<h1>{{ idea.title }}</h1>
+<p class="muted">Status: {{ idea.status }}</p>
+{% if idea.description %}<p>{{ idea.description }}</p>{% endif %}
+
+<section>
+    <h2>Linked contacts</h2>
+    <ul class="plain-list">
+        {% for c in linked_contacts %}
+        <li><a href="{{ url_for('contact_detail', contact_id=c.id) }}">{{ c.name }}</a>
+            {% if c.role_note %}<span class="muted"> — {{ c.role_note }}</span>{% endif %}</li>
+        {% else %}
+        <li class="muted">No contacts linked yet.</li>
+        {% endfor %}
+    </ul>
+
+    <form method="post" action="{{ url_for('link_idea_contact', idea_id=idea.id) }}" class="stacked-form">
+        <label>Contact
+            <select name="contact_id" required>
+                {% for c in all_contacts %}
+                <option value="{{ c.id }}">{{ c.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Role / note<input type="text" name="role_note"></label>
+        <button type="submit">Link contact</button>
+    </form>
+</section>
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}New contact — ConTexts{% endblock %}
+{% block content %}
+<h1>New contact</h1>
+<form method="post" class="stacked-form">
+    <label>Name<input type="text" name="name" required></label>
+    <label>Company<input type="text" name="company"></label>
+    <label>Title<input type="text" name="title"></label>
+    <label>Email<input type="email" name="email"></label>
+    <label>Phone<input type="text" name="phone"></label>
+    <label>LinkedIn URL<input type="url" name="linkedin_url"></label>
+    <label>Bio / background<textarea name="bio" rows="4"></textarea></label>
+    <button type="submit">Save</button>
+</form>
+{% endblock %}
