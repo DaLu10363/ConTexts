@@ -8,6 +8,8 @@
 <ul class="plain-list">
     <li>Unlink {{ counts.contacts }} contact{{ 's' if counts.contacts != 1 else '' }} from this company (contacts themselves are kept)</li>
     <li>Delete {{ counts.node_scores }} node score{{ 's' if counts.node_scores != 1 else '' }}</li>
+    <li>Delete {{ counts.interactions }} company-level interaction{{ 's' if counts.interactions != 1 else '' }} (interactions with its contacts are kept)</li>
+    <li>Delete {{ counts.briefings }} company briefing{{ 's' if counts.briefings != 1 else '' }}</li>
 </ul>
 <form method="post" class="button-row">
     <button type="submit" class="btn-danger">Yes, delete permanently</button>

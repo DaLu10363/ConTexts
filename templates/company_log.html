@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}Log interaction — {{ company.name }} — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Companies', url_for('companies_list')), (company.name, url_for('company_detail', company_id=company.id)), ('Log interaction / Link contact', none)]) }}{% endblock %}
+{% block content %}
+<div class="button-row" style="justify-content: space-between;">
+    <h1>{{ company.name }}: log interaction / link contact</h1>
+    <a href="{{ url_for('company_detail', company_id=company.id) }}" class="btn-ghost">Back to company</a>
+</div>
+<p class="muted">Use this for interactions with the company as a whole (e.g. a shared inbox, a team call, a formal letter). Conversations with one specific person belong on that contact's page.</p>
+
+{% set action_url = url_for('review_company_interaction', company_id=company.id) %}
+{% include "_interaction_form.html" %}
+
+<section class="card">
+    <h2>Link contact</h2>
+    <ul class="plain-list">
+        {% for c in contacts %}
+        <li class="button-row" style="justify-content: space-between;">
+            <span><a href="{{ url_for('contact_detail', contact_id=c.id) }}">{{ c.name }}</a>{% if c.title %}<span class="muted"> — {{ c.title }}</span>{% endif %}</span>
+            <form method="post" action="{{ url_for('unlink_company_contact', company_id=company.id, contact_id=c.id) }}">
+                <button type="submit" class="btn-ghost">Unlink</button>
+            </form>
+        </li>
+        {% else %}
+        <li class="muted">No contacts linked yet.</li>
+        {% endfor %}
+    </ul>
+    {% if other_contacts %}
+    <form method="post" action="{{ url_for('link_company_contact', company_id=company.id) }}" class="stacked-form">
+        <label>Contact
+            <select name="contact_id" required>
+                {% for c in other_contacts %}
+                <option value="{{ c.id }}">{{ c.name }}{% if c.company %} (currently {{ c.company }}){% endif %}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <button type="submit" class="btn-ghost">Link contact</button>
+    </form>
+    {% else %}
+    <p class="muted">All contacts are already linked here. <a href="{{ url_for('contact_new') }}">Add a new contact</a>.</p>
+    {% endif %}
+</section>
+{% endblock %}

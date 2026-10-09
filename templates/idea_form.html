@@ -1,21 +1,27 @@
 {% extends "base.html" %}
 {% import "_macros.html" as macros %}
-{% block title %}New idea — ConTexts{% endblock %}
-{% block breadcrumbs %}{{ macros.breadcrumbs([('Ideas', url_for('ideas_list')), ('New idea', none)]) }}{% endblock %}
+{% block title %}{{ 'Edit idea' if edit else 'New idea' }} — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Ideas', url_for('ideas_list')), (idea.title if edit and idea else 'New idea', none)]) }}{% endblock %}
 {% block content %}
-<h1>New idea</h1>
+<h1>{{ 'Edit ' ~ idea.title if edit and idea else 'New idea' }}</h1>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
 <div class="card">
     <form method="post" class="stacked-form">
-        <label>Title<input type="text" name="title" required></label>
-        <label>Description<textarea name="description" rows="4"></textarea></label>
+        <label>Title<input type="text" name="title" required value="{{ idea.title if idea else '' }}"></label>
+        <label>Description<textarea name="description" rows="4">{{ idea.description if idea else '' }}</textarea></label>
         <label>Status
             <select name="status">
-                <option value="active">active</option>
-                <option value="parked">parked</option>
-                <option value="done">done</option>
+                {% for s in ['active', 'parked', 'done'] %}
+                <option value="{{ s }}" {% if idea and idea.status == s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
             </select>
         </label>
-        <button type="submit">Save</button>
+        <div class="button-row">
+            <button type="submit">{{ 'Save changes' if edit else 'Save' }}</button>
+            {% if edit %}
+            <a href="{{ url_for('idea_detail', idea_id=idea_id) }}" class="btn-ghost">Cancel</a>
+            {% endif %}
+        </div>
     </form>
 </div>
 {% endblock %}

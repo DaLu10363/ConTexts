@@ -66,6 +66,19 @@ class LinkedInProfile(BaseModel):
     skills: List[str]
 
 
+class CompanyLinkedInProfile(BaseModel):
+    name: Optional[str] = None
+    tagline: Optional[str] = None
+    overview: str
+    website: Optional[str] = None
+    industry: Optional[str] = None
+    company_size: Optional[str] = None
+    headquarters: Optional[str] = None
+    founded: Optional[str] = None
+    specialties: List[str] = []
+    locations: List[str] = []
+
+
 class InteractionAnalysis(BaseModel):
     topic_tags: List[str]
     tone: str
@@ -177,6 +190,46 @@ def parse_and_enrich_contact(raw_text: str, nodes) -> NewContactEnrichment:
         output_format=NewContactEnrichment,
     )
     return response.parsed_output
+
+
+def parse_company_linkedin(raw_text: str) -> CompanyLinkedInProfile:
+    industries = ", ".join(INDUSTRY_OPTIONS)
+    response = _client().messages.parse(
+        model=MODEL,
+        max_tokens=2048,
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    "You are given pasted text from a company's LinkedIn page "
+                    "(About/overview section). Extract structured data: the "
+                    "company name, tagline, a concise overview of what the "
+                    "company does, website, company size, headquarters, "
+                    "founding year, specialties and locations. For industry, "
+                    f"pick the single closest option from this list: "
+                    f"{industries}. Leave a field empty if it isn't present in "
+                    "the text. Do not invent information that isn't there.\n\n"
+                    f"Pasted company page text:\n{raw_text}"
+                ),
+            }
+        ],
+        output_format=CompanyLinkedInProfile,
+    )
+    return response.parsed_output
+
+
+def _company_profile_text(company):
+    if not company or not company["profile_data"]:
+        return None
+    profile = json.loads(company["profile_data"])
+    return "; ".join([
+        f"Tagline: {profile.get('tagline') or ''}",
+        f"Overview: {profile.get('overview') or ''}",
+        f"Size: {profile.get('company_size') or '?'}",
+        f"HQ: {profile.get('headquarters') or '?'}",
+        f"Founded: {profile.get('founded') or '?'}",
+        f"Specialties: {', '.join(profile.get('specialties', [])) or '(none)'}",
+    ])
 
 
 def analyze_interaction(
@@ -489,7 +542,10 @@ def generate_briefing(
     format_,
     scheduled_at,
     context_notes,
+    company_contacts=None,
 ) -> BriefingResult:
+    """contact is None when the communication is with a company as a whole;
+    company_contacts then lists the known people there."""
     profile_text = "(no LinkedIn profile parsed yet)"
     if profile:
         work = "; ".join(
@@ -507,7 +563,11 @@ def generate_briefing(
 
     interaction_lines = []
     for i in interactions:
-        line = f"- [{i['occurred_at']}] {i['summary']}"
+        who = i["contact_name"] if "contact_name" in i.keys() else None
+        line = f"- [{i['occurred_at']}]"
+        if who:
+            line += f" (with {who})"
+        line += f" {i['summary']}"
         if i["next_steps"]:
             line += f" Next steps: {i['next_steps']}"
         interaction_lines.append(line)
@@ -530,6 +590,9 @@ def generate_briefing(
             f"  Website: {company['website'] or '(none)'}\n"
             f"  Node scores: {scores_text}"
         )
+        linkedin_text = _company_profile_text(company)
+        if linkedin_text:
+            company_text += f"\n  LinkedIn page: {linkedin_text}"
 
     idea_text = "(no idea linked to this briefing)"
     if idea:
@@ -540,6 +603,35 @@ def generate_briefing(
                 f"{idea_fit['fit_score']}/100 - {idea_fit['fit_rationale'] or ''}"
             )
 
+    if contact is not None:
+        counterpart_text = (
+            f"Contact: {contact['name']}\n"
+            f"Bio: {contact['bio'] or '(none)'}\n"
+            f"LinkedIn profile:\n{profile_text}\n\n"
+            f"Company affiliation:\n{company_text}"
+        )
+        intro = "an upcoming communication with a business contact"
+        search_targets = "this person and their company"
+        contact_highlights_shape = '"contact_highlights": ["..."], '
+    else:
+        people = "\n".join(
+            f"- {c['name']}" + (f" ({c['title']})" if c["title"] else "")
+            for c in (company_contacts or [])
+        ) or "(no known contacts at this organization)"
+        counterpart_text = (
+            "The communication is with this organization as a whole, not "
+            "with one specific person.\n"
+            f"Organization:\n{company_text}\n\n"
+            f"Known people at this organization:\n{people}"
+        )
+        intro = "an upcoming communication with an organization"
+        search_targets = "this organization and its key people"
+        contact_highlights_shape = (
+            '"contact_highlights": ["... (notes on key people at the '
+            'organization worth knowing for this purpose; empty list if '
+            'none)"], '
+        )
+
     response = _client().messages.create(
         model=MODEL,
         max_tokens=4096,
@@ -548,11 +640,11 @@ def generate_briefing(
             {
                 "role": "user",
                 "content": (
-                    "You are preparing a briefing for the user ahead of an "
-                    "upcoming communication with a business contact. Use "
+                    "You are preparing a briefing for the user ahead of "
+                    f"{intro}. Use "
                     "everything known below, AND use web search to find "
-                    "anything current and public about this person and "
-                    "their company that could be useful for this specific "
+                    f"anything current and public about {search_targets} "
+                    "that could be useful for this specific "
                     "purpose (e.g. recent news, funding rounds, programs, "
                     "calls for proposals, public statements). Only state "
                     "things you actually find via search or that are given "
@@ -562,17 +654,14 @@ def generate_briefing(
                     f"  Format: {format_ or '(unspecified)'}\n"
                     f"  Scheduled: {scheduled_at or '(unspecified)'}\n"
                     f"  Additional context from the user: {context_notes or '(none)'}\n\n"
-                    f"Contact: {contact['name']}\n"
-                    f"Bio: {contact['bio'] or '(none)'}\n"
-                    f"LinkedIn profile:\n{profile_text}\n\n"
-                    f"Company affiliation:\n{company_text}\n\n"
+                    f"{counterpart_text}\n\n"
                     f"Idea this meeting may relate to:\n{idea_text}\n\n"
                     f"Past logged interactions:\n{interactions_text}\n\n"
                     "After researching, respond with ONLY a JSON object, no "
                     "other text, no markdown code fences, in exactly this "
                     'shape: {"summary": "one paragraph on why this meeting '
                     'matters and the overall approach", '
-                    '"contact_highlights": ["..."], '
+                    f"{contact_highlights_shape}"
                     '"company_highlights": ["..."], '
                     '"talking_points": ["..."], '
                     '"open_questions": ["..."], '
@@ -608,6 +697,12 @@ def analyze_briefing_outcome(contact, company, briefing, raw_notes) -> BriefingO
         if company
         else "(none linked - company_update must be null)"
     )
+    if contact is not None:
+        counterpart = "a business contact"
+        counterpart_line = f"Contact: {contact['name']}\nCompany: {company_line}"
+    else:
+        counterpart = "an organization (not one specific person)"
+        counterpart_line = f"Organization: {company_line}"
     response = _client().messages.parse(
         model=MODEL,
         max_tokens=2048,
@@ -615,8 +710,8 @@ def analyze_briefing_outcome(contact, company, briefing, raw_notes) -> BriefingO
             {
                 "role": "user",
                 "content": (
-                    "The user just had a planned communication with a "
-                    "business contact and typed raw notes about what "
+                    "The user just had a planned communication with "
+                    f"{counterpart} and typed raw notes about what "
                     "happened. Turn this into a structured record.\n\n"
                     "1. Produce a normal interaction log entry: "
                     "interaction_summary (what was discussed/happened), "
@@ -627,7 +722,7 @@ def analyze_briefing_outcome(contact, company, briefing, raw_notes) -> BriefingO
                     "2. Separately, decide whether any part of the notes is "
                     "really an organizational/company-level fact (e.g. a "
                     "program, deadline, call for proposals, funding focus) "
-                    "rather than something personal to this contact. If so, "
+                    "rather than something personal to one person. If so, "
                     "set company_update to a revised, concise company "
                     "description that folds the new fact(s) into the "
                     "company's existing description (keep what's still "
@@ -637,8 +732,7 @@ def analyze_briefing_outcome(contact, company, briefing, raw_notes) -> BriefingO
                     "3. Give a one-to-two sentence outcome_summary of how "
                     "this communication went relative to its original "
                     "purpose and talking points.\n\n"
-                    f"Contact: {contact['name']}\n"
-                    f"Company: {company_line}\n\n"
+                    f"{counterpart_line}\n\n"
                     f"Original purpose of this communication: "
                     f"{briefing['purpose'] or '(unspecified)'}\n"
                     f"Planned talking points were: "
@@ -675,7 +769,7 @@ def suggest_briefing_checklist(briefing, contact, company) -> List[str]:
                     "check size'), not an open-ended question to research "
                     "later. Ground them in the specifics below, not generic "
                     "meeting advice.\n\n"
-                    f"Contact: {contact['name']}\n"
+                    f"Contact: {contact['name'] if contact else '(none - with the organization as a whole)'}\n"
                     f"Company: {company['name'] if company else '(none linked)'}\n"
                     f"Purpose: {briefing['purpose'] or '(unspecified)'}\n"
                     f"Summary: {briefing['summary'] or '(none)'}\n"

@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% import "_macros.html" as macros %}
-{% block title %}New company — ConTexts{% endblock %}
-{% block breadcrumbs %}{{ macros.breadcrumbs([('Companies', url_for('companies_list')), ('New company', none)]) }}{% endblock %}
+{% block title %}{{ 'Edit company' if edit else 'New company' }} — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Companies', url_for('companies_list')), (company.name if edit and company else 'New company', none)]) }}{% endblock %}
 {% block content %}
-<h1>New company</h1>
+<h1>{{ 'Edit ' ~ company.name if edit and company else 'New company' }}</h1>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 <div class="card">
     <form method="post" class="stacked-form">
@@ -18,7 +18,12 @@
             </select>
         </label>
         <label>Description<textarea name="description" rows="4">{{ company.description if company else '' }}</textarea></label>
-        <button type="submit">Save</button>
+        <div class="button-row">
+            <button type="submit">{{ 'Save changes' if edit else 'Save' }}</button>
+            {% if edit %}
+            <a href="{{ url_for('company_detail', company_id=company_id) }}" class="btn-ghost">Cancel</a>
+            {% endif %}
+        </div>
     </form>
 </div>
 {% endblock %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}Log interaction — {{ contact.name }} — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Contacts', url_for('contacts_list')), (contact.name, url_for('contact_detail', contact_id=contact.id)), ('Log interaction / Link company', none)]) }}{% endblock %}
+{% block content %}
+<div class="button-row" style="justify-content: space-between;">
+    <h1>{{ contact.name }}: log interaction / link company</h1>
+    <a href="{{ url_for('contact_detail', contact_id=contact.id) }}" class="btn-ghost">Back to contact</a>
+</div>
+
+{% set action_url = url_for('review_interaction', contact_id=contact.id) %}
+{% include "_interaction_form.html" %}
+
+<section class="card">
+    <h2>Link company</h2>
+    {% if company %}
+    <p>Currently: <a href="{{ url_for('company_detail', company_id=company.id) }}">{{ company.name }}</a></p>
+    {% else %}
+    <p class="muted">Not linked to a company record.</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('set_contact_company', contact_id=contact.id) }}" class="stacked-form">
+        <label>Company name (existing or new — leave blank to unlink)
+            <input type="text" name="company_name" list="company-options" value="{{ company.name if company else '' }}">
+            <datalist id="company-options">
+                {% for co in all_companies %}
+                <option value="{{ co.name }}">
+                {% endfor %}
+            </datalist>
+        </label>
+        <button type="submit" class="btn-ghost">Save</button>
+    </form>
+</section>
+{% endblock %}

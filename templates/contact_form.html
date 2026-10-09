@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% import "_macros.html" as macros %}
-{% block title %}New contact — ConTexts{% endblock %}
-{% block breadcrumbs %}{{ macros.breadcrumbs([('Contacts', url_for('contacts_list')), ('New contact', none)]) }}{% endblock %}
+{% block title %}{{ 'Edit contact' if edit else 'New contact' }} — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Contacts', url_for('contacts_list')), (contact.name if edit and contact else 'New contact', none)]) }}{% endblock %}
 {% block content %}
-<h1>New contact</h1>
+<h1>{{ 'Edit ' ~ contact.name if edit and contact else 'New contact' }}</h1>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 <div class="card">
     <form method="post" class="stacked-form">
@@ -15,13 +15,19 @@
         <label>LinkedIn URL<input type="url" name="linkedin_url" value="{{ contact.linkedin_url if contact else '' }}"></label>
         <label>Bio / background<textarea name="bio" rows="4">{{ contact.bio if contact else '' }}</textarea></label>
 
+        {% if not edit %}
         <label>Paste LinkedIn profile text (optional)
             <textarea name="linkedin_text" rows="8" placeholder="Open their LinkedIn profile, expand any 'see more' sections, select all, and paste here.">{{ linkedin_text or '' }}</textarea>
         </label>
+        {% endif %}
 
         <div class="button-row">
-            <button type="submit" name="action" value="save">Save contact</button>
+            <button type="submit" name="action" value="save">{{ 'Save changes' if edit else 'Save contact' }}</button>
+            {% if not edit %}
             <button type="submit" name="action" value="parse" class="btn-ghost">Parse LinkedIn text with Claude</button>
+            {% else %}
+            <a href="{{ url_for('contact_detail', contact_id=contact_id) }}" class="btn-ghost">Cancel</a>
+            {% endif %}
         </div>
     </form>
 </div>

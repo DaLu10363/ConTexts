@@ -1,0 +1,17 @@
+{# Expects: action_url, today, and optionally interaction_error / pending_interaction #}
+<section class="card">
+    <h2>Log a new interaction</h2>
+    {% if interaction_error %}<p class="error">{{ interaction_error }}</p>{% endif %}
+    <form method="post" action="{{ action_url }}" class="stacked-form">
+        <label>Date<input type="date" name="occurred_at" value="{{ pending_interaction.occurred_at if pending_interaction else today }}"></label>
+        <label>What was discussed<textarea name="summary" rows="3" required>{{ pending_interaction.summary if pending_interaction else '' }}</textarea></label>
+        <label>Next steps<textarea name="next_steps" rows="2">{{ pending_interaction.next_steps if pending_interaction else '' }}</textarea></label>
+        <label>Source
+            <select name="source_type">
+                <option value="recalled" {% if pending_interaction and pending_interaction.source_type == 'recalled' %}selected{% endif %}>Recalled from memory</option>
+                <option value="verbatim" {% if pending_interaction and pending_interaction.source_type == 'verbatim' %}selected{% endif %}>Verbatim copy (email/chat)</option>
+            </select>
+        </label>
+        <button type="submit">Analyze &amp; review</button>
+    </form>
+</section>

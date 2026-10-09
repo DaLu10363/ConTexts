@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% import "_macros.html" as macros %}
-{% block title %}Review briefing for {{ contact.name }} — ConTexts{% endblock %}
+{% block title %}Review briefing for {{ subject.name }} — ConTexts{% endblock %}
 {% block breadcrumbs %}{{ macros.breadcrumbs([('Briefings', url_for('briefings_list')), ('New briefing', url_for('briefing_new')), ('Review', none)]) }}{% endblock %}
 {% block content %}
-<h1>Review briefing for {{ contact.name }}</h1>
+<h1>Review briefing for {{ subject.name }}</h1>
 <p class="muted">Drafted from your database and a web search. Edit anything below (one item per line in the list fields), then save.</p>
 
 <div class="card">
 <form method="post" action="{{ url_for('briefing_confirm') }}" class="stacked-form">
-    <input type="hidden" name="contact_id" value="{{ fields.contact_id }}">
+    <input type="hidden" name="subject" value="{{ fields.subject }}">
     <input type="hidden" name="idea_id" value="{{ fields.idea_id }}">
     <input type="hidden" name="purpose" value="{{ fields.purpose }}">
     <input type="hidden" name="format" value="{{ fields.format }}">
@@ -22,8 +22,8 @@
     </p>
 
     <label>Summary<textarea name="summary" rows="3">{{ result.summary }}</textarea></label>
-    <label>About the contact (one per line)<textarea name="contact_highlights" rows="4">{{ result.contact_highlights | join('\n') }}</textarea></label>
-    <label>About their company (one per line)<textarea name="company_highlights" rows="4">{{ result.company_highlights | join('\n') }}</textarea></label>
+    <label>{{ 'About the contact' if subject.kind == 'contact' else 'Key people' }} (one per line)<textarea name="contact_highlights" rows="4">{{ result.contact_highlights | join('\n') }}</textarea></label>
+    <label>{{ 'About their company' if subject.kind == 'contact' else 'About the company' }} (one per line)<textarea name="company_highlights" rows="4">{{ result.company_highlights | join('\n') }}</textarea></label>
     <label>Suggested talking points / materials (one per line)<textarea name="talking_points" rows="4">{{ result.talking_points | join('\n') }}</textarea></label>
     <label>Open questions (one per line)<textarea name="open_questions" rows="3">{{ result.open_questions | join('\n') }}</textarea></label>
     <label>Sources found (one per line)<textarea name="sources" rows="2">{{ result.sources | join('\n') }}</textarea></label>

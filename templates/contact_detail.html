@@ -5,8 +5,18 @@
 {% block content %}
 <div class="button-row" style="justify-content: space-between;">
     <h1>{{ contact.name }}</h1>
-    <a href="{{ url_for('delete_contact', contact_id=contact.id) }}" class="btn-danger">Delete contact</a>
+    <div class="button-row">
+        <form method="post" action="{{ url_for('suggest_node_scores', contact_id=contact.id) }}">
+            <button type="submit">Fill gaps with Claude</button>
+        </form>
+        <a href="{{ url_for('contact_log', contact_id=contact.id) }}" class="btn-ghost">Log interaction / Link company</a>
+        <a href="{{ url_for('contact_edit', contact_id=contact.id) }}" class="btn-ghost">Edit</a>
+        <a href="{{ url_for('delete_contact', contact_id=contact.id) }}" class="btn-danger">Delete contact</a>
+    </div>
 </div>
+{% if node_score_error %}<p class="error">{{ node_score_error }}</p>{% endif %}
+
+{# Hard facts #}
 {% if freshness %}
 <p class="muted">
     <span class="heat-badge {{ freshness.css_class }}">{{ freshness.label }}</span>
@@ -15,7 +25,7 @@
 {% endif %}
 <p class="muted">
     {{ contact.title or '' }}
-    {% if contact.title and contact.company %} at {% endif %}
+    {% if contact.title and (company or contact.company) %} at {% endif %}
     {% if company %}<a href="{{ url_for('company_detail', company_id=company.id) }}">{{ company.name }}</a>
     {% else %}{{ contact.company or '' }}{% endif %}
 </p>
@@ -27,57 +37,22 @@
 {% if contact.bio %}<p>{{ contact.bio }}</p>{% endif %}
 
 <section class="card">
-    <h2>Company</h2>
-    {% if company %}
-    <p><a href="{{ url_for('company_detail', company_id=company.id) }}">{{ company.name }}</a></p>
-    {% else %}
-    <p class="muted">Not linked to a company record.</p>
-    {% endif %}
-    <form method="post" action="{{ url_for('set_contact_company', contact_id=contact.id) }}" class="stacked-form">
-        <label>Company name (existing or new — leave blank to unlink)
-            <input type="text" name="company_name" list="company-options" value="{{ company.name if company else '' }}">
-            <datalist id="company-options">
-                {% for co in all_companies %}
-                <option value="{{ co.name }}">
-                {% endfor %}
-            </datalist>
-        </label>
-        <button type="submit" class="btn-ghost">Save</button>
-    </form>
-</section>
-
-{% if profile %}
-<section class="card">
-    <h2>LinkedIn profile (parsed {{ contact.profile_parsed_at }})</h2>
-    <h3>Work history</h3>
+    <h2>Linked ideas</h2>
     <ul class="plain-list">
-        {% for job in profile.work_history %}
-        <li><strong>{{ job.title }}</strong> at {{ job.company }}
-            {% if job.start or job.end %}<span class="muted"> ({{ job.start or '?' }} – {{ job.end or 'present' }})</span>{% endif %}</li>
+        {% for i in ideas %}
+        <li><a href="{{ url_for('idea_detail', idea_id=i.id) }}">{{ i.title }}</a></li>
+        {% else %}
+        <li class="muted">None yet. Link this contact from an idea's page.</li>
         {% endfor %}
     </ul>
-    <h3>Education</h3>
-    <ul class="plain-list">
-        {% for edu in profile.education %}
-        <li><strong>{{ edu.school }}</strong>
-            {% if edu.degree %} — {{ edu.degree }}{% endif %}{% if edu.field %}, {{ edu.field }}{% endif %}</li>
-        {% endfor %}
-    </ul>
-    <h3>Skills</h3>
-    <p>{{ profile.skills | join(', ') }}</p>
 </section>
-{% endif %}
 
 <section class="card">
     <h2>Node compatibility</h2>
-    {% if node_score_error %}<p class="error">{{ node_score_error }}</p>{% endif %}
     {{ macros.radar_chart('node-radar', radar_labels, radar_values, contact.name) }}
     {% if radar_unscored %}
     <p class="muted">Not yet scored (shown as 0): {{ radar_unscored | join(', ') }}</p>
     {% endif %}
-    <form method="post" action="{{ url_for('suggest_node_scores', contact_id=contact.id) }}">
-        <button type="submit">Fill gaps with Claude</button>
-    </form>
     <div class="table-wrap">
         <table class="data-table">
             <thead><tr><th>Node</th><th>Score</th><th>Notes</th><th></th></tr></thead>
@@ -111,35 +86,7 @@
         <li class="muted">None yet.</li>
         {% endfor %}
     </ul>
-    <p><a href="{{ url_for('briefing_new') }}">+ New briefing</a></p>
-</section>
-
-<section class="card">
-    <h2>Ideas linked to this contact</h2>
-    <ul class="plain-list">
-        {% for i in ideas %}
-        <li><a href="{{ url_for('idea_detail', idea_id=i.id) }}">{{ i.title }}</a></li>
-        {% else %}
-        <li class="muted">None yet.</li>
-        {% endfor %}
-    </ul>
-</section>
-
-<section class="card">
-    <h2>Log a new interaction</h2>
-    {% if interaction_error %}<p class="error">{{ interaction_error }}</p>{% endif %}
-    <form method="post" action="{{ url_for('review_interaction', contact_id=contact.id) }}" class="stacked-form">
-        <label>Date<input type="date" name="occurred_at" value="{{ pending_interaction.occurred_at if pending_interaction else today }}"></label>
-        <label>What was discussed<textarea name="summary" rows="3" required>{{ pending_interaction.summary if pending_interaction else '' }}</textarea></label>
-        <label>Next steps<textarea name="next_steps" rows="2">{{ pending_interaction.next_steps if pending_interaction else '' }}</textarea></label>
-        <label>Source
-            <select name="source_type">
-                <option value="recalled" {% if pending_interaction and pending_interaction.source_type == 'recalled' %}selected{% endif %}>Recalled from memory</option>
-                <option value="verbatim" {% if pending_interaction and pending_interaction.source_type == 'verbatim' %}selected{% endif %}>Verbatim copy (email/chat)</option>
-            </select>
-        </label>
-        <button type="submit">Analyze &amp; review</button>
-    </form>
+    <p><a href="{{ url_for('briefing_new', subject='contact:' ~ contact.id) }}">+ New briefing</a></p>
 </section>
 
 <section class="card">
@@ -147,7 +94,10 @@
     <ul class="timeline">
         {% for n in interactions %}
         <li>
-            <strong>{{ n.occurred_at }}</strong>
+            <div class="button-row" style="justify-content: space-between;">
+                <strong>{{ n.occurred_at }}</strong>
+                <a href="{{ url_for('interaction_edit', contact_id=contact.id, interaction_id=n.id) }}" class="btn-ghost">Edit</a>
+            </div>
             <span class="muted"> — {{ n.source_type }}{% if n.tone %}, {{ n.tone }}{% endif %}</span>
             <p>{{ n.summary }}</p>
             {% if n.next_steps %}<p class="muted">Next: {{ n.next_steps }}</p>{% endif %}
@@ -157,5 +107,30 @@
         <li class="muted">No interactions logged yet.</li>
         {% endfor %}
     </ul>
+</section>
+
+<section class="card">
+    {% if profile %}
+    <h2>LinkedIn profile (parsed {{ contact.profile_parsed_at }})</h2>
+    <h3>Work history</h3>
+    <ul class="plain-list">
+        {% for job in profile.work_history %}
+        <li><strong>{{ job.title }}</strong> at {{ job.company }}
+            {% if job.start or job.end %}<span class="muted"> ({{ job.start or '?' }} – {{ job.end or 'present' }})</span>{% endif %}</li>
+        {% endfor %}
+    </ul>
+    <h3>Education</h3>
+    <ul class="plain-list">
+        {% for edu in profile.education %}
+        <li><strong>{{ edu.school }}</strong>
+            {% if edu.degree %} — {{ edu.degree }}{% endif %}{% if edu.field %}, {{ edu.field }}{% endif %}</li>
+        {% endfor %}
+    </ul>
+    <h3>Skills</h3>
+    <p>{{ profile.skills | join(', ') }}</p>
+    {% else %}
+    <h2>LinkedIn profile</h2>
+    <p class="muted">No LinkedIn profile parsed for this contact.</p>
+    {% endif %}
 </section>
 {% endblock %}

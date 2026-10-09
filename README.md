@@ -1,31 +1,69 @@
 # ConTexts
 
-A private, personal CRM for tracking business contacts, the context around past
-discussions with them, and the ideas they're relevant to. Unlike LinkedIn, nothing
-here is shared — it's a private memory layer for your own network.
+A small, private, single-user notebook for business contacts — and the context that came with them.
+
+**Status:** v0.1. An MVP built in an afternoon to solve one person's problem. Not a product, not a CRM, not operational software.
+
+---
+
+## Why this exists
+
+I left a networking event with eleven business cards, four voice memos and one genuinely good conversation I'd had in a car park. Three weeks later I could not remember which card belonged to the car park.
+
+LinkedIn is very good at telling me *that* I know someone. It is useless at telling me *how* — who introduced us, what we agreed, and whether this person was a potential co-founder, an investor, a supplier, or someone who wanted to sell me insurance.
+
+A contact without context is just a name. Hence the pun, and hence this repo.
+
+Commercial CRMs solve a different problem: they are built around sales pipelines, they cost money, and they want your contacts on their servers. I wanted notes on my own disk. So I built this instead.
+
+## What it is
+
+- A local SQLite database and a server-rendered Flask UI, running on `127.0.0.1`.
+- Somewhere to record **who you met, how, and what came of it**.
+- A way to prepare for the next meeting without re-reading six months of email.
+
+## What it is not
+
+- Not multi-user. There are no accounts, no permissions, no sharing.
+- Not hardened. There is no authentication, because it is expected to run only on your own machine.
+- Not designed. The UI was built by an engineer in a hurry and looks like it.
+- Not a CRM, and not a replacement for one if you actually run a sales team.
+
+If any of that is a problem for your use case, fork it — that's what the licence is for.
+
+---
 
 ## Data model
 
 - **Contacts** — people you know: name, company, title, contact info, bio.
 - **Companies** — the organizations your contacts work at: name, website,
   industry/sector (picked from a fixed list, also proposed by Claude via
-  "Fill gaps with Claude"), description. Scored against Nodes the same way
-  contacts are.
-- **Nodes** — role classifications a contact can qualify for (e.g. Investor,
-  Supplier, Cofounder, Consultant, Contributor/Contractor). Each contact gets a
-  0-100 compatibility score per node, so one person can score well as both a
-  "Consultant" and an "Investor", for example.
-- **Interactions** — timestamped notes logged after a call or meeting with a
-  contact (what was discussed, next steps). These roll up into that contact's
-  profile as a timeline.
-- **Ideas** — business or project ideas, linked to the contacts relevant to
-  pursuing them.
+  "Fill gaps with Claude"), description, and optionally a parsed LinkedIn
+  company page. Scored against Nodes the same way contacts are.
+- **Nodes** — role classifications a contact or company can qualify for (e.g.
+  Investor, Supplier, Cofounder, Consultant, Contributor/Contractor). Each one
+  gets a 0-100 compatibility score per node, so one person can score well as
+  both a "Consultant" and an "Investor", for example.
+- **Interactions** — timestamped notes logged after a call or meeting (what
+  was discussed, next steps) — either with a contact, or with a company as a
+  whole when there was no single person (a team call, a shared inbox, a
+  formal letter). A company's timeline shows its own interactions plus those
+  with its contacts.
+- **Ideas** — business or project ideas, linked to the contacts and companies
+  relevant to pursuing them.
 - **Briefings** — meeting/communication prep, parallel to the rest of the
-  database. You pick a contact and describe the purpose of an upcoming
-  communication; Claude researches them (your logged history plus a web
-  search on them and their company) and drafts a reviewable briefing. After
-  the communication happens, you log what came up and Claude turns it into a
-  logged interaction, folding anything company-level into the company record.
+  database. You pick a contact or a company and describe the purpose of an
+  upcoming communication; Claude researches them (your logged history plus a
+  web search) and drafts a reviewable briefing. After the communication
+  happens, you log what came up and Claude turns it into a logged
+  interaction, folding anything company-level into the company record.
+
+Contact and company pages share one layout: facts and bio first, then linked
+ideas, node compatibility, meeting briefings, interaction history, and the
+parsed LinkedIn profile at the bottom. Logging an interaction and linking a
+company (or, on a company, a contact) live on a separate page behind the
+**Log interaction / Link …** button at the top, next to **Fill gaps with
+Claude**.
 
 ## Dashboard
 
@@ -42,14 +80,16 @@ database.
 
 ## Briefings
 
-A briefing is prep for an upcoming call or meeting with a contact, tracked
-alongside the rest of the database (the `Briefings` tab).
+A briefing is prep for an upcoming call or meeting with a contact — or with
+a company as a whole — tracked alongside the rest of the database (the
+`Briefings` tab).
 
-1. **Create one** — pick the contact (and optionally an Idea it relates to),
-   and state the purpose, format, and date. Claude researches them (your
-   logged history plus a live web search on them and their company) and
-   drafts a summary, contact/company highlights, talking points, and open
-   questions — all editable on the review screen before saving.
+1. **Create one** — pick the contact or company (and optionally an Idea it
+   relates to), and state the purpose, format, and date. Claude researches
+   them (your logged history plus a live web search) and drafts a summary,
+   contact/company highlights (for a company briefing: its key people),
+   talking points, and open questions — all editable on the review screen
+   before saving.
 2. **Checklist** — on the briefing's page, before logging the outcome, build
    a checklist of concrete, checkable items to work through: click "Suggest
    checklist with Claude" to propose a few grounded in that specific
@@ -58,46 +98,20 @@ alongside the rest of the database (the `Briefings` tab).
 3. **Log the outcome** — once the communication happens, describe what came
    up; checked checklist items are already pulled into the notes as a
    starting point, so you're editing/adding rather than starting blank.
-   Claude turns this into a logged interaction on the contact and, only
+   Claude turns this into a logged interaction on the contact (or company)
+   and, only
    where it's actually relevant, proposes an updated company description
    (e.g. a funding program's deadline they mentioned) — reviewable before
    saving. The briefing is then marked completed.
 
 ## LLM-assisted classification
 
-Two optional, Claude-assisted flows feed the judgment signal used to score
-contacts against nodes:
+All model calls are made server-side from `llm.py`, and every result is shown to you for review before anything is written to the database.
 
-- **LinkedIn profile parsing** — paste a contact's LinkedIn profile text (copy
-  it manually from the page) into the "New contact" form, click "Parse with
-  Claude", and review the extracted work history, education, and skills before
-  saving. There is no LinkedIn API for pulling a third party's profile data, so
-  this is a manual copy/paste step — Claude only structures what you've already
-  pasted. In the same call, Claude also suggests node compatibility scores
-  based on the profile, and lists the companies found in the work history so
-  you can add them to the companies list and link the current employer — all
-  reviewable/editable on the same confirmation screen before anything saves.
-- **Interaction analysis** — when you log an interaction, you tag whether the
-  note is a verbatim copy (e.g. from an email) or recalled from memory, then
-  Claude proposes topic tags, a tone descriptor, and a short rationale. You
-  review and can edit before it's saved.
-
-(Briefings also call Claude — for research, the checklist, and outcome
-analysis — covered above.)
-
-All of these calls go through the Anthropic API server-side (see `llm.py`);
-nothing is written to the database until you confirm the review screen.
-
-Each contact, company, and idea page has a single **"Fill gaps with Claude"**
-button rather than separate buttons per feature — it picks up whatever is new
-(a logged interaction, a newly linked company, an edited description, ...)
-and refreshes the relevant scores in one pass. For companies specifically,
-this button also runs live web research. Claude never guesses which
-same-named company you mean from the name alone, so if there's no website on
-file yet, clicking the button doesn't call Claude at all — it first asks you
-for the website, then researches and scores together using that, so the
-score suggestions are grounded in the real company rather than a thin or
-wrong guess.
+- **Profile text parsing** — paste the text of a person's or a company's LinkedIn page that you have copied yourself, and the app structures it into fields. It does not connect to LinkedIn or any other site, log in anywhere, or fetch anything. It parses text you give it, nothing more.
+- **Interaction analysis** — suggests topic tags and a tone read for a note you've written. Optional: if the model is unavailable, you fill these in yourself and save anyway.
+- **Fill gaps with Claude** — a button at the top of each contact, company and idea page. It proposes node scores for a contact or company, and per-contact fit scores for an idea.
+- **Company research** — part of a company's "Fill gaps", and it waits until the company has a website before calling the model, so it never guesses between same-named companies.
 
 ## Stack
 
@@ -138,7 +152,7 @@ actually exited) before starting a new one.
 
 The SQLite file defaults to `instance/contexts.db`, which is git-ignored.
 
-**This project folder lives in OneDrive.** Running a live SQLite database inside
+**I run this project folder in OneDrive.** Running a live SQLite database inside
 a synced folder risks file-lock errors or corruption if OneDrive tries to sync
 the `.db` file mid-write. To avoid that, point the database somewhere outside
 OneDrive via an environment variable, e.g.:
@@ -147,47 +161,57 @@ OneDrive via an environment variable, e.g.:
 setx CONTEXTS_DB "%LOCALAPPDATA%\ConTexts\contexts.db"
 ```
 
-Set it before running `flask ... init-db` / `flask ... run` so both use the same
+Open a new terminal after `setx` so the variable is picked up. Set it before
+running `flask --app app init-db` / `python app.py` so both use the same
 path. The code (this repo) stays synced and versioned; the data stays local and
 untouched by OneDrive.
 
 ## Anthropic API key
 
-The LinkedIn-parsing and interaction-analysis features call the Anthropic API
-server-side. Set your key as a Windows environment variable — **not** in any
-file in this folder, and never paste it into chat:
+The LLM features need an API key, read from the environment by `anthropic.Anthropic()` in `llm.py`.
+
+Windows:
 
 ```
 setx ANTHROPIC_API_KEY "sk-ant-your-real-key-here"
 ```
 
-Open a new terminal after running this (environment variables set with `setx`
-only apply to new terminal sessions) before starting the app. The key is read
-once per process by `anthropic.Anthropic()` in `llm.py` and is never sent to
-the browser, stored in the database, or rendered into any page.
+macOS / Linux:
+
+```
+export ANTHROPIC_API_KEY="sk-ant-your-real-key-here"
+```
+
+Open a new terminal after `setx` so the variable is picked up.
+
+The key is never sent to the browser, stored in the database, or rendered into any page.
+
+Put it in your environment, never in a project file. Model calls cost money against your own account; the app does not meter or cap that, so keep an eye on usage.
+
+The rest of the app works without a key — you lose briefings, profile parsing, company research and the fill-gap suggestions, and interaction notes are saved without suggested tags.
 
 ## Your data never goes to GitHub
 
-`.gitignore` excludes `instance/` and `*.db`, so the SQLite database — your actual
-contacts, interaction notes, node scores, and ideas — is never committed and never
-pushed, regardless of the database's location or whether this repo is public or
-private. Only the application code (this repo's tracked files) goes to GitHub.
-Before ever making the repo public, you can double check no database file was ever
-committed by accident with:
+`.gitignore` excludes `instance/` and `*.db`, so the database is not committed. To check that none was ever committed by accident (an empty result means none):
 
 ```
 git log --all --full-history -- '*.db'
 ```
 
-An empty result confirms none exists in history.
+Note that the LLM features do send the text you submit — contact details, your notes — to the Anthropic API for processing. If that isn't acceptable for a particular contact, don't use those buttons for that record.
+
+## Your data, your responsibility
+
+This app stores notes about identifiable people, and in the EU that makes whoever runs it the controller of that data. If you use ConTexts for anything beyond your own private notes, that's your call and your obligation: keep the database on a device you control, store only what you actually need, write notes you would be comfortable showing the person they're about, and delete records when you no longer have a reason to keep them.
+
+The author ships no telemetry and receives none of your data. Everything stays in your SQLite file unless you press one of the LLM buttons.
+
+## Licence
+
+MIT. Copyright (c) 2026 DaLu10363. Do what you like with it; no warranty of any kind.
 
 ## Version history
 
 The current version is shown at the bottom of every page.
 
-- **v0.1** — First publication. Contacts, Companies, Nodes, Ideas, and
-  Briefings, with Claude-assisted LinkedIn parsing/scoring, interaction
-  analysis, company research, and meeting briefings (each behind a
-  review-before-save screen); a dashboard with a D3 relationship graph;
-  a light/dark (blue-violet) theme with a manual toggle; and breadcrumb
-  navigation.
+- **v0.1** — first publication.

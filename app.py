@@ -52,6 +52,72 @@ def _freshness(last_contact_str):
     }
 
 
+INTERACTIONS_TABLE_SQL = (
+    "CREATE TABLE {name} ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "contact_id INTEGER REFERENCES contacts(id) ON DELETE CASCADE, "
+    "company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE, "
+    "occurred_at TEXT NOT NULL, summary TEXT NOT NULL, next_steps TEXT, "
+    "source_type TEXT NOT NULL DEFAULT 'recalled', topic_tags TEXT, tone TEXT, "
+    "analysis_rationale TEXT, analyzed_at TEXT, "
+    "created_at TEXT NOT NULL DEFAULT (datetime('now')), "
+    "CHECK (contact_id IS NOT NULL OR company_id IS NOT NULL))"
+)
+INTERACTIONS_COPY_COLS = (
+    "id, contact_id, occurred_at, summary, next_steps, source_type, topic_tags, "
+    "tone, analysis_rationale, analyzed_at, created_at"
+)
+
+BRIEFINGS_TABLE_SQL = (
+    "CREATE TABLE {name} ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "contact_id INTEGER REFERENCES contacts(id) ON DELETE CASCADE, "
+    "company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE, "
+    "idea_id INTEGER REFERENCES ideas(id) ON DELETE SET NULL, "
+    "purpose TEXT, format TEXT, scheduled_at TEXT, context_notes TEXT, "
+    "summary TEXT, contact_highlights TEXT, company_highlights TEXT, "
+    "talking_points TEXT, open_questions TEXT, sources TEXT, "
+    "status TEXT NOT NULL DEFAULT 'planned', "
+    "outcome_notes TEXT, outcome_summary TEXT, "
+    "interaction_id INTEGER REFERENCES interactions(id) ON DELETE SET NULL, "
+    "created_at TEXT NOT NULL DEFAULT (datetime('now')), "
+    "updated_at TEXT NOT NULL DEFAULT (datetime('now')), "
+    "CHECK (contact_id IS NOT NULL OR company_id IS NOT NULL))"
+)
+BRIEFINGS_COPY_COLS = (
+    "id, contact_id, idea_id, purpose, format, scheduled_at, context_notes, "
+    "summary, contact_highlights, company_highlights, talking_points, "
+    "open_questions, sources, status, outcome_notes, outcome_summary, "
+    "interaction_id, created_at, updated_at"
+)
+
+
+def _rebuild_table(db, table, create_sql, copy_cols):
+    """SQLite can't drop a NOT NULL constraint in place, so rebuild the table
+    (create new, copy rows, drop old, rename) with foreign keys off - otherwise
+    dropping the old table would cascade/set-null into referencing rows."""
+    db.commit()
+    db.execute("PRAGMA foreign_keys = OFF")
+    try:
+        db.executescript(
+            "BEGIN; "
+            f"{create_sql.format(name=table + '_new')}; "
+            f"INSERT INTO {table}_new ({copy_cols}) SELECT {copy_cols} FROM {table}; "
+            f"DROP TABLE {table}; "
+            f"ALTER TABLE {table}_new RENAME TO {table}; "
+            "COMMIT;"
+        )
+    finally:
+        db.execute("PRAGMA foreign_keys = ON")
+
+
+def _contact_id_required(db, table):
+    return any(
+        r[1] == "contact_id" and r[3]
+        for r in db.execute(f"PRAGMA table_info({table})").fetchall()
+    )
+
+
 def ensure_schema(db):
     db.execute(
         "CREATE TABLE IF NOT EXISTS companies ("
@@ -77,18 +143,13 @@ def ensure_schema(db):
         "PRIMARY KEY (idea_id, contact_id, node_id))"
     )
     db.execute(
-        "CREATE TABLE IF NOT EXISTS briefings ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE, "
-        "idea_id INTEGER REFERENCES ideas(id) ON DELETE SET NULL, "
-        "purpose TEXT, format TEXT, scheduled_at TEXT, context_notes TEXT, "
-        "summary TEXT, contact_highlights TEXT, company_highlights TEXT, "
-        "talking_points TEXT, open_questions TEXT, sources TEXT, "
-        "status TEXT NOT NULL DEFAULT 'planned', "
-        "outcome_notes TEXT, outcome_summary TEXT, "
-        "interaction_id INTEGER REFERENCES interactions(id) ON DELETE SET NULL, "
-        "created_at TEXT NOT NULL DEFAULT (datetime('now')), "
-        "updated_at TEXT NOT NULL DEFAULT (datetime('now')))"
+        BRIEFINGS_TABLE_SQL.format(name="IF NOT EXISTS briefings")
+    )
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS idea_companies ("
+        "idea_id INTEGER NOT NULL REFERENCES ideas(id) ON DELETE CASCADE, "
+        "company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE, "
+        "role_note TEXT, PRIMARY KEY (idea_id, company_id))"
     )
     db.execute(
         "CREATE TABLE IF NOT EXISTS briefing_checklist_items ("
@@ -111,8 +172,15 @@ def ensure_schema(db):
             db.execute(stmt)
 
     company_cols = {r[1] for r in db.execute("PRAGMA table_info(companies)").fetchall()}
-    if "industry" not in company_cols:
-        db.execute("ALTER TABLE companies ADD COLUMN industry TEXT")
+    company_migrations = {
+        "industry": "ALTER TABLE companies ADD COLUMN industry TEXT",
+        "linkedin_raw_text": "ALTER TABLE companies ADD COLUMN linkedin_raw_text TEXT",
+        "profile_data": "ALTER TABLE companies ADD COLUMN profile_data TEXT",
+        "profile_parsed_at": "ALTER TABLE companies ADD COLUMN profile_parsed_at TEXT",
+    }
+    for col, stmt in company_migrations.items():
+        if col not in company_cols:
+            db.execute(stmt)
 
     interaction_cols = {
         r[1] for r in db.execute("PRAGMA table_info(interactions)").fetchall()
@@ -130,6 +198,12 @@ def ensure_schema(db):
     for col, stmt in interaction_migrations.items():
         if col not in interaction_cols:
             db.execute(stmt)
+
+    # Interactions and briefings can belong to a company instead of a contact
+    if _contact_id_required(db, "interactions"):
+        _rebuild_table(db, "interactions", INTERACTIONS_TABLE_SQL, INTERACTIONS_COPY_COLS)
+    if _contact_id_required(db, "briefings"):
+        _rebuild_table(db, "briefings", BRIEFINGS_TABLE_SQL, BRIEFINGS_COPY_COLS)
 
     idea_contact_cols = {
         r[1] for r in db.execute("PRAGMA table_info(idea_contacts)").fetchall()
@@ -230,6 +304,132 @@ def _graph_data(db):
             })
 
     return {"nodes": graph_nodes, "links": graph_links}
+
+
+def _contact_subject(contact):
+    return {
+        "kind": "contact", "id": contact["id"], "name": contact["name"],
+        "section": "Contacts", "list_url": url_for("contacts_list"),
+        "url": url_for("contact_detail", contact_id=contact["id"]),
+    }
+
+
+def _company_subject(company):
+    return {
+        "kind": "company", "id": company["id"], "name": company["name"],
+        "section": "Companies", "list_url": url_for("companies_list"),
+        "url": url_for("company_detail", company_id=company["id"]),
+    }
+
+
+def _company_interactions(db, company_id):
+    """Interactions with the company itself plus those with its contacts."""
+    return db.execute(
+        "SELECT i.*, c.name AS contact_name FROM interactions i "
+        "LEFT JOIN contacts c ON c.id = i.contact_id "
+        "WHERE i.company_id = ? OR c.company_id = ? "
+        "ORDER BY i.occurred_at DESC, i.id DESC",
+        (company_id, company_id),
+    ).fetchall()
+
+
+def _interaction_fields(form):
+    return {
+        "occurred_at": form.get("occurred_at") or date.today().isoformat(),
+        "summary": form.get("summary", "").strip(),
+        "next_steps": form.get("next_steps", "").strip(),
+        "source_type": form.get("source_type", "recalled"),
+    }
+
+
+def _topic_tags(form):
+    return [t.strip() for t in form.get("topic_tags", "").split(",") if t.strip()]
+
+
+def _tags_text(interaction):
+    if not interaction["topic_tags"]:
+        return ""
+    return ", ".join(json.loads(interaction["topic_tags"]))
+
+
+def _review_interaction(subject, fields, confirm_url):
+    # The analysis is a convenience, not a requirement: if Claude is
+    # unavailable (no API key, network, ...) the note can still be saved
+    # with tags/tone filled in by hand.
+    analysis_error = None
+    try:
+        analysis = llm.analyze_interaction(
+            fields["summary"], fields["next_steps"], fields["source_type"]
+        )
+    except Exception as exc:
+        analysis = llm.InteractionAnalysis(topic_tags=[], tone="", rationale="")
+        analysis_error = f"Couldn't analyze with Claude: {exc}"
+    return render_template(
+        "interaction_review.html",
+        subject=subject,
+        confirm_url=confirm_url,
+        fields=fields,
+        analysis=analysis,
+        analysis_error=analysis_error,
+        topic_tags_text=", ".join(analysis.topic_tags),
+    )
+
+
+def _insert_interaction(db, form, contact_id=None, company_id=None):
+    topic_tags = _topic_tags(form)
+    db.execute(
+        "INSERT INTO interactions "
+        "(contact_id, company_id, occurred_at, summary, next_steps, source_type, "
+        "topic_tags, tone, analysis_rationale, analyzed_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+        (
+            contact_id,
+            company_id,
+            form.get("occurred_at") or date.today().isoformat(),
+            form["summary"].strip(),
+            form.get("next_steps", "").strip() or None,
+            form.get("source_type", "recalled"),
+            json.dumps(topic_tags) if topic_tags else None,
+            form.get("tone", "").strip() or None,
+            form.get("rationale", "").strip() or None,
+        ),
+    )
+
+
+def _edit_interaction(db, subject, interaction):
+    if request.method == "POST":
+        summary = request.form.get("summary", "").strip()
+        if not summary:
+            return render_template(
+                "interaction_edit.html",
+                subject=subject,
+                interaction=interaction,
+                topic_tags_text=_tags_text(interaction),
+                error="Summary is required.",
+            )
+        topic_tags = _topic_tags(request.form)
+        db.execute(
+            "UPDATE interactions SET occurred_at = ?, summary = ?, next_steps = ?, "
+            "topic_tags = ?, tone = ?, analysis_rationale = ? WHERE id = ?",
+            (
+                request.form.get("occurred_at") or date.today().isoformat(),
+                summary,
+                request.form.get("next_steps", "").strip() or None,
+                json.dumps(topic_tags) if topic_tags else None,
+                request.form.get("tone", "").strip() or None,
+                request.form.get("rationale", "").strip() or None,
+                interaction["id"],
+            ),
+        )
+        db.commit()
+        return redirect(subject["url"])
+
+    return render_template(
+        "interaction_edit.html",
+        subject=subject,
+        interaction=interaction,
+        topic_tags_text=_tags_text(interaction),
+    )
 
 
 @app.route("/")
@@ -493,6 +693,56 @@ def contact_new_confirm():
     return redirect(url_for("contact_detail", contact_id=contact_id))
 
 
+@app.route("/contacts/<int:contact_id>/edit", methods=["GET", "POST"])
+def contact_edit(contact_id):
+    db = get_db()
+    contact = db.execute(
+        "SELECT * FROM contacts WHERE id = ?", (contact_id,)
+    ).fetchone()
+    if contact is None:
+        abort(404)
+
+    if request.method == "POST":
+        fields = {
+            "name": request.form.get("name", "").strip(),
+            "company": request.form.get("company", "").strip(),
+            "title": request.form.get("title", "").strip(),
+            "email": request.form.get("email", "").strip(),
+            "phone": request.form.get("phone", "").strip(),
+            "linkedin_url": request.form.get("linkedin_url", "").strip(),
+            "bio": request.form.get("bio", "").strip(),
+        }
+        if not fields["name"]:
+            return render_template(
+                "contact_form.html",
+                contact=fields,
+                edit=True,
+                contact_id=contact_id,
+                error="Name is required.",
+            )
+        db.execute(
+            "UPDATE contacts SET name = ?, company = ?, title = ?, email = ?, "
+            "phone = ?, linkedin_url = ?, bio = ?, updated_at = datetime('now') "
+            "WHERE id = ?",
+            (
+                fields["name"],
+                fields["company"] or None,
+                fields["title"] or None,
+                fields["email"] or None,
+                fields["phone"] or None,
+                fields["linkedin_url"] or None,
+                fields["bio"] or None,
+                contact_id,
+            ),
+        )
+        db.commit()
+        return redirect(url_for("contact_detail", contact_id=contact_id))
+
+    return render_template(
+        "contact_form.html", contact=contact, edit=True, contact_id=contact_id
+    )
+
+
 def _contact_detail_context(db, contact_id):
     contact = db.execute(
         "SELECT * FROM contacts WHERE id = ?", (contact_id,)
@@ -524,7 +774,6 @@ def _contact_detail_context(db, contact_id):
         company = db.execute(
             "SELECT * FROM companies WHERE id = ?", (contact["company_id"],)
         ).fetchone()
-    all_companies = db.execute("SELECT * FROM companies ORDER BY name").fetchall()
     briefings = db.execute(
         "SELECT * FROM briefings WHERE contact_id = ? "
         "ORDER BY COALESCE(scheduled_at, created_at) DESC",
@@ -538,7 +787,6 @@ def _contact_detail_context(db, contact_id):
         "ideas": ideas,
         "profile": profile,
         "company": company,
-        "all_companies": all_companies,
         "briefings": briefings,
         "radar_labels": radar_labels,
         "radar_values": radar_values,
@@ -613,67 +861,73 @@ def set_contact_company(contact_id):
     return redirect(url_for("contact_detail", contact_id=contact_id))
 
 
+def _contact_log_context(db, contact_id):
+    contact = db.execute(
+        "SELECT * FROM contacts WHERE id = ?", (contact_id,)
+    ).fetchone()
+    if contact is None:
+        abort(404)
+    company = None
+    if contact["company_id"] is not None:
+        company = db.execute(
+            "SELECT * FROM companies WHERE id = ?", (contact["company_id"],)
+        ).fetchone()
+    return {
+        "contact": contact,
+        "company": company,
+        "all_companies": db.execute("SELECT * FROM companies ORDER BY name").fetchall(),
+        "today": date.today().isoformat(),
+    }
+
+
+@app.route("/contacts/<int:contact_id>/log")
+def contact_log(contact_id):
+    db = get_db()
+    return render_template("contact_log.html", **_contact_log_context(db, contact_id))
+
+
 @app.route("/contacts/<int:contact_id>/interactions/review", methods=["POST"])
 def review_interaction(contact_id):
     db = get_db()
-    fields = {
-        "occurred_at": request.form.get("occurred_at") or date.today().isoformat(),
-        "summary": request.form.get("summary", "").strip(),
-        "next_steps": request.form.get("next_steps", "").strip(),
-        "source_type": request.form.get("source_type", "recalled"),
-    }
+    context = _contact_log_context(db, contact_id)
+    fields = _interaction_fields(request.form)
     if not fields["summary"]:
-        return redirect(url_for("contact_detail", contact_id=contact_id))
-    try:
-        analysis = llm.analyze_interaction(
-            fields["summary"], fields["next_steps"], fields["source_type"]
-        )
-    except Exception as exc:
-        return render_template(
-            "contact_detail.html",
-            **_contact_detail_context(db, contact_id),
-            interaction_error=f"Couldn't analyze with Claude: {exc}",
-            pending_interaction=fields,
-        )
-    return render_template(
-        "interaction_review.html",
-        contact=db.execute(
-            "SELECT * FROM contacts WHERE id = ?", (contact_id,)
-        ).fetchone(),
-        fields=fields,
-        analysis=analysis,
-        topic_tags_text=", ".join(analysis.topic_tags),
+        return redirect(url_for("contact_log", contact_id=contact_id))
+    return _review_interaction(
+        _contact_subject(context["contact"]),
+        fields,
+        url_for("confirm_interaction", contact_id=contact_id),
     )
 
 
 @app.route("/contacts/<int:contact_id>/interactions/confirm", methods=["POST"])
 def confirm_interaction(contact_id):
     db = get_db()
-    topic_tags = [
-        t.strip() for t in request.form.get("topic_tags", "").split(",") if t.strip()
-    ]
-    db.execute(
-        "INSERT INTO interactions "
-        "(contact_id, occurred_at, summary, next_steps, source_type, "
-        "topic_tags, tone, analysis_rationale, analyzed_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
-        (
-            contact_id,
-            request.form.get("occurred_at") or date.today().isoformat(),
-            request.form["summary"].strip(),
-            request.form.get("next_steps", "").strip() or None,
-            request.form.get("source_type", "recalled"),
-            json.dumps(topic_tags) if topic_tags else None,
-            request.form.get("tone", "").strip() or None,
-            request.form.get("rationale", "").strip() or None,
-        ),
-    )
+    _insert_interaction(db, request.form, contact_id=contact_id)
     db.execute(
         "UPDATE contacts SET updated_at = datetime('now') WHERE id = ?",
         (contact_id,),
     )
     db.commit()
     return redirect(url_for("contact_detail", contact_id=contact_id))
+
+
+@app.route(
+    "/contacts/<int:contact_id>/interactions/<int:interaction_id>/edit",
+    methods=["GET", "POST"],
+)
+def interaction_edit(contact_id, interaction_id):
+    db = get_db()
+    interaction = db.execute(
+        "SELECT * FROM interactions WHERE id = ? AND contact_id = ?",
+        (interaction_id, contact_id),
+    ).fetchone()
+    if interaction is None:
+        abort(404)
+    contact = db.execute(
+        "SELECT * FROM contacts WHERE id = ?", (contact_id,)
+    ).fetchone()
+    return _edit_interaction(db, _contact_subject(contact), interaction)
 
 
 @app.route("/contacts/<int:contact_id>/nodes", methods=["POST"])
@@ -785,16 +1039,37 @@ def _company_detail_context(db, company_id):
         "ORDER BY n.name",
         (company_id,),
     ).fetchall()
+    ideas = db.execute(
+        "SELECT i.*, ic.role_note FROM ideas i "
+        "JOIN idea_companies ic ON ic.idea_id = i.id "
+        "WHERE ic.company_id = ? ORDER BY i.updated_at DESC",
+        (company_id,),
+    ).fetchall()
+    briefings = db.execute(
+        "SELECT b.*, c.name AS contact_name FROM briefings b "
+        "LEFT JOIN contacts c ON c.id = b.contact_id "
+        "WHERE b.company_id = ? OR c.company_id = ? "
+        "ORDER BY COALESCE(b.scheduled_at, b.created_at) DESC",
+        (company_id, company_id),
+    ).fetchall()
+    interactions = _company_interactions(db, company_id)
+    profile = json.loads(company["profile_data"]) if company["profile_data"] else None
     radar_labels = [s["name"] for s in scores]
     radar_values = [s["score"] if s["score"] is not None else 0 for s in scores]
     radar_unscored = [s["name"] for s in scores if s["score"] is None]
+    last_contact_date = interactions[0]["occurred_at"] if interactions else company["created_at"]
     return {
         "company": company,
         "contacts": contacts,
         "scores": scores,
+        "ideas": ideas,
+        "briefings": briefings,
+        "interactions": interactions,
+        "profile": profile,
         "radar_labels": radar_labels,
         "radar_values": radar_values,
         "radar_unscored": radar_unscored,
+        "freshness": _freshness(last_contact_date),
     }
 
 
@@ -826,10 +1101,13 @@ def companies_list():
     freshness_by_company = {}
     for c in companies:
         activity = db.execute(
-            "SELECT MAX(COALESCE(i.occurred_at, ct.created_at)) AS activity_at "
+            "SELECT MAX(activity_at) AS activity_at FROM ("
+            "SELECT occurred_at AS activity_at FROM interactions WHERE company_id = ? "
+            "UNION ALL "
+            "SELECT COALESCE(i.occurred_at, ct.created_at) "
             "FROM contacts ct LEFT JOIN interactions i ON i.contact_id = ct.id "
-            "WHERE ct.company_id = ?",
-            (c["id"],),
+            "WHERE ct.company_id = ?)",
+            (c["id"], c["id"]),
         ).fetchone()["activity_at"]
         freshness_by_company[c["id"]] = _freshness(activity or c["created_at"])
 
@@ -884,6 +1162,49 @@ def company_detail(company_id):
     db = get_db()
     return render_template(
         "company_detail.html", **_company_detail_context(db, company_id)
+    )
+
+
+@app.route("/companies/<int:company_id>/edit", methods=["GET", "POST"])
+def company_edit(company_id):
+    db = get_db()
+    company = db.execute(
+        "SELECT * FROM companies WHERE id = ?", (company_id,)
+    ).fetchone()
+    if company is None:
+        abort(404)
+
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        if not name:
+            return render_template(
+                "company_form.html",
+                company=request.form,
+                edit=True,
+                company_id=company_id,
+                error="Name is required.",
+                industry_options=llm.INDUSTRY_OPTIONS,
+            )
+        db.execute(
+            "UPDATE companies SET name = ?, description = ?, website = ?, "
+            "industry = ?, updated_at = datetime('now') WHERE id = ?",
+            (
+                name,
+                request.form.get("description", "").strip() or None,
+                request.form.get("website", "").strip() or None,
+                request.form.get("industry", "").strip() or None,
+                company_id,
+            ),
+        )
+        db.commit()
+        return redirect(url_for("company_detail", company_id=company_id))
+
+    return render_template(
+        "company_form.html",
+        company=company,
+        edit=True,
+        company_id=company_id,
+        industry_options=llm.INDUSTRY_OPTIONS,
     )
 
 
@@ -1035,6 +1356,12 @@ def delete_company(company_id):
         "node_scores": db.execute(
             "SELECT COUNT(*) FROM company_nodes WHERE company_id = ?", (company_id,)
         ).fetchone()[0],
+        "interactions": db.execute(
+            "SELECT COUNT(*) FROM interactions WHERE company_id = ?", (company_id,)
+        ).fetchone()[0],
+        "briefings": db.execute(
+            "SELECT COUNT(*) FROM briefings WHERE company_id = ?", (company_id,)
+        ).fetchone()[0],
     }
     return render_template(
         "company_delete_confirm.html", company=company, counts=counts
@@ -1052,6 +1379,173 @@ def set_company_node(company_id):
         "VALUES (?, ?, ?, ?) "
         "ON CONFLICT(company_id, node_id) DO UPDATE SET score = ?, notes = ?",
         (company_id, node_id, score, notes, score, notes),
+    )
+    db.commit()
+    return redirect(url_for("company_detail", company_id=company_id))
+
+
+def _company_log_context(db, company_id):
+    company = db.execute(
+        "SELECT * FROM companies WHERE id = ?", (company_id,)
+    ).fetchone()
+    if company is None:
+        abort(404)
+    contacts = db.execute(
+        "SELECT * FROM contacts WHERE company_id = ? ORDER BY name", (company_id,)
+    ).fetchall()
+    other_contacts = db.execute(
+        "SELECT * FROM contacts WHERE company_id IS NULL OR company_id != ? "
+        "ORDER BY name",
+        (company_id,),
+    ).fetchall()
+    return {
+        "company": company,
+        "contacts": contacts,
+        "other_contacts": other_contacts,
+        "today": date.today().isoformat(),
+    }
+
+
+@app.route("/companies/<int:company_id>/log")
+def company_log(company_id):
+    db = get_db()
+    return render_template("company_log.html", **_company_log_context(db, company_id))
+
+
+@app.route("/companies/<int:company_id>/interactions/review", methods=["POST"])
+def review_company_interaction(company_id):
+    db = get_db()
+    context = _company_log_context(db, company_id)
+    fields = _interaction_fields(request.form)
+    if not fields["summary"]:
+        return redirect(url_for("company_log", company_id=company_id))
+    return _review_interaction(
+        _company_subject(context["company"]),
+        fields,
+        url_for("confirm_company_interaction", company_id=company_id),
+    )
+
+
+@app.route("/companies/<int:company_id>/interactions/confirm", methods=["POST"])
+def confirm_company_interaction(company_id):
+    db = get_db()
+    _insert_interaction(db, request.form, company_id=company_id)
+    db.execute(
+        "UPDATE companies SET updated_at = datetime('now') WHERE id = ?",
+        (company_id,),
+    )
+    db.commit()
+    return redirect(url_for("company_detail", company_id=company_id))
+
+
+@app.route(
+    "/companies/<int:company_id>/interactions/<int:interaction_id>/edit",
+    methods=["GET", "POST"],
+)
+def company_interaction_edit(company_id, interaction_id):
+    db = get_db()
+    interaction = db.execute(
+        "SELECT * FROM interactions WHERE id = ? AND company_id = ?",
+        (interaction_id, company_id),
+    ).fetchone()
+    if interaction is None:
+        abort(404)
+    company = db.execute(
+        "SELECT * FROM companies WHERE id = ?", (company_id,)
+    ).fetchone()
+    return _edit_interaction(db, _company_subject(company), interaction)
+
+
+@app.route("/companies/<int:company_id>/contacts", methods=["POST"])
+def link_company_contact(company_id):
+    db = get_db()
+    company = db.execute(
+        "SELECT * FROM companies WHERE id = ?", (company_id,)
+    ).fetchone()
+    if company is None:
+        abort(404)
+    contact_id = request.form.get("contact_id", "").strip()
+    if contact_id:
+        db.execute(
+            "UPDATE contacts SET company = ?, company_id = ?, "
+            "updated_at = datetime('now') WHERE id = ?",
+            (company["name"], company_id, contact_id),
+        )
+        db.commit()
+    return redirect(url_for("company_log", company_id=company_id))
+
+
+@app.route(
+    "/companies/<int:company_id>/contacts/<int:contact_id>/unlink", methods=["POST"]
+)
+def unlink_company_contact(company_id, contact_id):
+    db = get_db()
+    db.execute(
+        "UPDATE contacts SET company = NULL, company_id = NULL, "
+        "updated_at = datetime('now') WHERE id = ? AND company_id = ?",
+        (contact_id, company_id),
+    )
+    db.commit()
+    return redirect(url_for("company_log", company_id=company_id))
+
+
+@app.route("/companies/<int:company_id>/linkedin", methods=["GET", "POST"])
+def company_linkedin(company_id):
+    db = get_db()
+    company = db.execute(
+        "SELECT * FROM companies WHERE id = ?", (company_id,)
+    ).fetchone()
+    if company is None:
+        abort(404)
+    if request.method == "GET":
+        return render_template(
+            "company_linkedin_form.html",
+            company=company,
+            linkedin_text=company["linkedin_raw_text"] or "",
+        )
+
+    linkedin_text = request.form.get("linkedin_text", "").strip()
+    if not linkedin_text:
+        return render_template(
+            "company_linkedin_form.html",
+            company=company,
+            linkedin_text="",
+            error="Paste some LinkedIn company page text first.",
+        )
+    try:
+        profile = llm.parse_company_linkedin(linkedin_text)
+    except Exception as exc:
+        return render_template(
+            "company_linkedin_form.html",
+            company=company,
+            linkedin_text=linkedin_text,
+            error=f"Couldn't parse with Claude: {exc}",
+        )
+    return render_template(
+        "company_linkedin_review.html",
+        company=company,
+        profile=profile,
+        profile_json=profile.model_dump_json(),
+        linkedin_text=linkedin_text,
+        industry_options=llm.INDUSTRY_OPTIONS,
+    )
+
+
+@app.route("/companies/<int:company_id>/linkedin/confirm", methods=["POST"])
+def confirm_company_linkedin(company_id):
+    db = get_db()
+    db.execute(
+        "UPDATE companies SET description = ?, website = ?, industry = ?, "
+        "linkedin_raw_text = ?, profile_data = ?, profile_parsed_at = datetime('now'), "
+        "updated_at = datetime('now') WHERE id = ?",
+        (
+            request.form.get("description", "").strip() or None,
+            request.form.get("website", "").strip() or None,
+            request.form.get("industry", "").strip() or None,
+            request.form.get("linkedin_text", "").strip() or None,
+            request.form.get("profile_json") or None,
+            company_id,
+        ),
     )
     db.commit()
     return redirect(url_for("company_detail", company_id=company_id))
@@ -1107,6 +1601,39 @@ def idea_new():
     return render_template("idea_form.html")
 
 
+@app.route("/ideas/<int:idea_id>/edit", methods=["GET", "POST"])
+def idea_edit(idea_id):
+    db = get_db()
+    idea = db.execute("SELECT * FROM ideas WHERE id = ?", (idea_id,)).fetchone()
+    if idea is None:
+        abort(404)
+
+    if request.method == "POST":
+        title = request.form.get("title", "").strip()
+        if not title:
+            return render_template(
+                "idea_form.html",
+                idea=request.form,
+                edit=True,
+                idea_id=idea_id,
+                error="Title is required.",
+            )
+        db.execute(
+            "UPDATE ideas SET title = ?, description = ?, status = ?, "
+            "updated_at = datetime('now') WHERE id = ?",
+            (
+                title,
+                request.form.get("description", "").strip() or None,
+                request.form.get("status", "active"),
+                idea_id,
+            ),
+        )
+        db.commit()
+        return redirect(url_for("idea_detail", idea_id=idea_id))
+
+    return render_template("idea_form.html", idea=idea, edit=True, idea_id=idea_id)
+
+
 def _idea_detail_context(db, idea_id):
     idea = db.execute("SELECT * FROM ideas WHERE id = ?", (idea_id,)).fetchone()
     if idea is None:
@@ -1128,11 +1655,20 @@ def _idea_detail_context(db, idea_id):
     node_scores_by_contact = {}
     for row in node_score_rows:
         node_scores_by_contact.setdefault(row["contact_id"], []).append(row)
+    linked_companies = db.execute(
+        "SELECT co.*, ic.role_note FROM companies co "
+        "JOIN idea_companies ic ON ic.company_id = co.id "
+        "WHERE ic.idea_id = ? ORDER BY co.name",
+        (idea_id,),
+    ).fetchall()
+    all_companies = db.execute("SELECT * FROM companies ORDER BY name").fetchall()
     return {
         "idea": idea,
         "linked_contacts": linked_contacts,
         "all_contacts": all_contacts,
         "node_scores_by_contact": node_scores_by_contact,
+        "linked_companies": linked_companies,
+        "all_companies": all_companies,
     }
 
 
@@ -1152,6 +1688,24 @@ def link_idea_contact(idea_id):
         "VALUES (?, ?, ?) "
         "ON CONFLICT(idea_id, contact_id) DO UPDATE SET role_note = ?",
         (idea_id, contact_id, role_note, role_note),
+    )
+    db.execute(
+        "UPDATE ideas SET updated_at = datetime('now') WHERE id = ?", (idea_id,)
+    )
+    db.commit()
+    return redirect(url_for("idea_detail", idea_id=idea_id))
+
+
+@app.route("/ideas/<int:idea_id>/companies", methods=["POST"])
+def link_idea_company(idea_id):
+    db = get_db()
+    company_id = request.form["company_id"]
+    role_note = request.form.get("role_note", "").strip() or None
+    db.execute(
+        "INSERT INTO idea_companies (idea_id, company_id, role_note) "
+        "VALUES (?, ?, ?) "
+        "ON CONFLICT(idea_id, company_id) DO UPDATE SET role_note = ?",
+        (idea_id, company_id, role_note, role_note),
     )
     db.execute(
         "UPDATE ideas SET updated_at = datetime('now') WHERE id = ?", (idea_id,)
@@ -1272,13 +1826,47 @@ def confirm_idea_fit(idea_id):
 BRIEFING_STATUS_OPTIONS = {"planned", "completed"}
 
 
+def _parse_subject(value):
+    """'contact:3' / 'company:7' -> ('contact', 3); anything else -> (None, None)."""
+    kind, _, raw_id = (value or "").partition(":")
+    if kind in ("contact", "company") and raw_id.isdigit():
+        return kind, int(raw_id)
+    return None, None
+
+
+def _briefing_parties(db, contact_id, company_id):
+    """Return (contact, company, subject) for a briefing's counterpart: a
+    contact (plus their company, if linked) or a company on its own."""
+    if contact_id is not None:
+        contact = db.execute(
+            "SELECT * FROM contacts WHERE id = ?", (contact_id,)
+        ).fetchone()
+        if contact is None:
+            abort(404)
+        company = None
+        if contact["company_id"] is not None:
+            company = db.execute(
+                "SELECT * FROM companies WHERE id = ?", (contact["company_id"],)
+            ).fetchone()
+        return contact, company, _contact_subject(contact)
+    company = db.execute(
+        "SELECT * FROM companies WHERE id = ?", (company_id,)
+    ).fetchone()
+    if company is None:
+        abort(404)
+    return None, company, _company_subject(company)
+
+
 @app.route("/briefings")
 def briefings_list():
     db = get_db()
     status = request.args.get("status", "").strip()
     query = (
-        "SELECT b.*, c.name AS contact_name FROM briefings b "
-        "JOIN contacts c ON c.id = b.contact_id"
+        "SELECT b.*, COALESCE(c.name, co.name) AS subject_name, "
+        "CASE WHEN b.contact_id IS NULL THEN 'company' ELSE 'contact' END AS subject_kind "
+        "FROM briefings b "
+        "LEFT JOIN contacts c ON c.id = b.contact_id "
+        "LEFT JOIN companies co ON co.id = b.company_id"
     )
     params = []
     if status in BRIEFING_STATUS_OPTIONS:
@@ -1293,48 +1881,56 @@ def briefings_list():
 def briefing_new():
     db = get_db()
     contacts = db.execute("SELECT * FROM contacts ORDER BY name").fetchall()
+    companies = db.execute("SELECT * FROM companies ORDER BY name").fetchall()
     ideas = db.execute("SELECT * FROM ideas ORDER BY title").fetchall()
 
-    if request.method == "GET":
+    def form(**extra):
         return render_template(
-            "briefing_form.html", contacts=contacts, ideas=ideas, fields=None
+            "briefing_form.html", contacts=contacts, companies=companies,
+            ideas=ideas, **extra,
         )
 
+    if request.method == "GET":
+        preselect = request.args.get("subject", "").strip()
+        return form(fields={"subject": preselect} if preselect else None)
+
     fields = {
-        "contact_id": request.form.get("contact_id", "").strip(),
+        "subject": request.form.get("subject", "").strip(),
         "idea_id": request.form.get("idea_id", "").strip(),
         "purpose": request.form.get("purpose", "").strip(),
         "format": request.form.get("format", "").strip(),
         "scheduled_at": request.form.get("scheduled_at", "").strip(),
         "context_notes": request.form.get("context_notes", "").strip(),
     }
-    if not fields["contact_id"] or not fields["purpose"]:
-        return render_template(
-            "briefing_form.html",
-            contacts=contacts,
-            ideas=ideas,
+    kind, subject_id = _parse_subject(fields["subject"])
+    if kind is None or not fields["purpose"]:
+        return form(
             fields=fields,
-            error="Pick a contact and describe the purpose first.",
+            error="Pick a contact or company and describe the purpose first.",
         )
 
-    contact = db.execute(
-        "SELECT * FROM contacts WHERE id = ?", (fields["contact_id"],)
-    ).fetchone()
-    if contact is None:
-        abort(404)
-    profile = json.loads(contact["profile_data"]) if contact["profile_data"] else None
+    contact, company, subject = _briefing_parties(
+        db,
+        subject_id if kind == "contact" else None,
+        subject_id if kind == "company" else None,
+    )
+    profile = None
+    if contact is not None and contact["profile_data"]:
+        profile = json.loads(contact["profile_data"])
 
-    company = None
     company_node_scores = None
-    if contact["company_id"] is not None:
-        company = db.execute(
-            "SELECT * FROM companies WHERE id = ?", (contact["company_id"],)
-        ).fetchone()
+    company_contacts = None
+    if company is not None:
         company_node_scores = db.execute(
             "SELECT n.name, cn.score FROM company_nodes cn "
             "JOIN nodes n ON n.id = cn.node_id WHERE cn.company_id = ?",
-            (contact["company_id"],),
+            (company["id"],),
         ).fetchall()
+        if contact is None:
+            company_contacts = db.execute(
+                "SELECT * FROM contacts WHERE company_id = ? ORDER BY name",
+                (company["id"],),
+            ).fetchall()
 
     idea = None
     idea_fit = None
@@ -1342,17 +1938,20 @@ def briefing_new():
         idea = db.execute(
             "SELECT * FROM ideas WHERE id = ?", (fields["idea_id"],)
         ).fetchone()
-        if idea is not None:
+        if idea is not None and contact is not None:
             idea_fit = db.execute(
                 "SELECT fit_score, fit_rationale FROM idea_contacts "
                 "WHERE idea_id = ? AND contact_id = ?",
-                (fields["idea_id"], fields["contact_id"]),
+                (fields["idea_id"], contact["id"]),
             ).fetchone()
 
-    interactions = db.execute(
-        "SELECT * FROM interactions WHERE contact_id = ? ORDER BY occurred_at DESC",
-        (fields["contact_id"],),
-    ).fetchall()
+    if contact is not None:
+        interactions = db.execute(
+            "SELECT * FROM interactions WHERE contact_id = ? ORDER BY occurred_at DESC",
+            (contact["id"],),
+        ).fetchall()
+    else:
+        interactions = _company_interactions(db, company["id"])
 
     try:
         result = llm.generate_briefing(
@@ -1367,19 +1966,17 @@ def briefing_new():
             fields["format"],
             fields["scheduled_at"],
             fields["context_notes"],
+            company_contacts=company_contacts,
         )
     except Exception as exc:
-        return render_template(
-            "briefing_form.html",
-            contacts=contacts,
-            ideas=ideas,
+        return form(
             fields=fields,
             error=f"Couldn't generate a briefing with Claude: {exc}",
         )
 
     return render_template(
         "briefing_review.html",
-        contact=contact,
+        subject=subject,
         idea=idea,
         fields=fields,
         result=result,
@@ -1389,18 +1986,22 @@ def briefing_new():
 @app.route("/briefings/confirm", methods=["POST"])
 def briefing_confirm():
     db = get_db()
+    kind, subject_id = _parse_subject(request.form.get("subject"))
+    if kind is None:
+        abort(400)
 
     def lines(name):
         return [l.strip() for l in request.form.get(name, "").splitlines() if l.strip()]
 
     db.execute(
         "INSERT INTO briefings "
-        "(contact_id, idea_id, purpose, format, scheduled_at, context_notes, "
-        "summary, contact_highlights, company_highlights, talking_points, "
-        "open_questions, sources) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "(contact_id, company_id, idea_id, purpose, format, scheduled_at, "
+        "context_notes, summary, contact_highlights, company_highlights, "
+        "talking_points, open_questions, sources) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            request.form["contact_id"],
+            subject_id if kind == "contact" else None,
+            subject_id if kind == "company" else None,
             request.form.get("idea_id") or None,
             request.form.get("purpose", "").strip() or None,
             request.form.get("format", "").strip() or None,
@@ -1425,9 +2026,9 @@ def _briefing_detail_context(db, briefing_id):
     ).fetchone()
     if briefing is None:
         abort(404)
-    contact = db.execute(
-        "SELECT * FROM contacts WHERE id = ?", (briefing["contact_id"],)
-    ).fetchone()
+    contact, company, subject = _briefing_parties(
+        db, briefing["contact_id"], briefing["company_id"]
+    )
     idea = None
     if briefing["idea_id"] is not None:
         idea = db.execute(
@@ -1444,6 +2045,8 @@ def _briefing_detail_context(db, briefing_id):
     return {
         "briefing": briefing,
         "contact": contact,
+        "company": company,
+        "subject": subject,
         "idea": idea,
         "contact_highlights": json.loads(briefing["contact_highlights"] or "[]"),
         "company_highlights": json.loads(briefing["company_highlights"] or "[]"),
@@ -1478,11 +2081,9 @@ def delete_briefing(briefing_id):
         db.commit()
         return redirect(url_for("briefings_list"))
 
-    contact = db.execute(
-        "SELECT * FROM contacts WHERE id = ?", (briefing["contact_id"],)
-    ).fetchone()
+    _, _, subject = _briefing_parties(db, briefing["contact_id"], briefing["company_id"])
     return render_template(
-        "briefing_delete_confirm.html", briefing=briefing, contact=contact
+        "briefing_delete_confirm.html", briefing=briefing, subject=subject
     )
 
 
@@ -1500,11 +2101,7 @@ def review_briefing_outcome(briefing_id):
 
     briefing = context["briefing"]
     contact = context["contact"]
-    company = None
-    if contact["company_id"] is not None:
-        company = db.execute(
-            "SELECT * FROM companies WHERE id = ?", (contact["company_id"],)
-        ).fetchone()
+    company = context["company"]
 
     try:
         result = llm.analyze_briefing_outcome(contact, company, briefing, raw_notes)
@@ -1519,7 +2116,7 @@ def review_briefing_outcome(briefing_id):
     return render_template(
         "briefing_outcome_review.html",
         briefing=briefing,
-        contact=contact,
+        subject=context["subject"],
         company=company,
         result=result,
         raw_notes=raw_notes,
@@ -1536,16 +2133,19 @@ def confirm_briefing_outcome(briefing_id):
     ).fetchone()
     if briefing is None:
         abort(404)
-    contact_id = briefing["contact_id"]
+    contact, company, _ = _briefing_parties(
+        db, briefing["contact_id"], briefing["company_id"]
+    )
 
     tags = [t.strip() for t in request.form.get("tags", "").split(",") if t.strip()]
     db.execute(
         "INSERT INTO interactions "
-        "(contact_id, occurred_at, summary, next_steps, source_type, "
+        "(contact_id, company_id, occurred_at, summary, next_steps, source_type, "
         "topic_tags, tone, analysis_rationale, analyzed_at) "
-        "VALUES (?, ?, ?, ?, 'recalled', ?, ?, ?, datetime('now'))",
+        "VALUES (?, ?, ?, ?, ?, 'recalled', ?, ?, ?, datetime('now'))",
         (
-            contact_id,
+            contact["id"] if contact else None,
+            company["id"] if contact is None else None,
             request.form.get("occurred_at") or date.today().isoformat(),
             request.form["summary"].strip(),
             request.form.get("next_steps", "").strip() or None,
@@ -1555,22 +2155,19 @@ def confirm_briefing_outcome(briefing_id):
         ),
     )
     interaction_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-    db.execute(
-        "UPDATE contacts SET updated_at = datetime('now') WHERE id = ?",
-        (contact_id,),
-    )
+    if contact is not None:
+        db.execute(
+            "UPDATE contacts SET updated_at = datetime('now') WHERE id = ?",
+            (contact["id"],),
+        )
 
     company_update = request.form.get("company_update", "").strip()
-    if company_update:
-        contact = db.execute(
-            "SELECT * FROM contacts WHERE id = ?", (contact_id,)
-        ).fetchone()
-        if contact["company_id"] is not None:
-            db.execute(
-                "UPDATE companies SET description = ?, updated_at = datetime('now') "
-                "WHERE id = ?",
-                (company_update, contact["company_id"]),
-            )
+    if company_update and company is not None:
+        db.execute(
+            "UPDATE companies SET description = ?, updated_at = datetime('now') "
+            "WHERE id = ?",
+            (company_update, company["id"]),
+        )
 
     db.execute(
         "UPDATE briefings SET status = 'completed', outcome_notes = ?, "
@@ -1618,14 +2215,9 @@ def suggest_checklist_items(briefing_id):
     ).fetchone()
     if briefing is None:
         abort(404)
-    contact = db.execute(
-        "SELECT * FROM contacts WHERE id = ?", (briefing["contact_id"],)
-    ).fetchone()
-    company = None
-    if contact["company_id"] is not None:
-        company = db.execute(
-            "SELECT * FROM companies WHERE id = ?", (contact["company_id"],)
-        ).fetchone()
+    contact, company, _ = _briefing_parties(
+        db, briefing["contact_id"], briefing["company_id"]
+    )
 
     try:
         items = llm.suggest_briefing_checklist(briefing, contact, company)

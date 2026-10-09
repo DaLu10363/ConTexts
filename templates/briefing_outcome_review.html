@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% import "_macros.html" as macros %}
-{% block title %}Review outcome — {{ contact.name }} — ConTexts{% endblock %}
-{% block breadcrumbs %}{{ macros.breadcrumbs([('Briefings', url_for('briefings_list')), (contact.name, url_for('briefing_detail', briefing_id=briefing.id)), ('Log outcome', none)]) }}{% endblock %}
+{% block title %}Review outcome — {{ subject.name }} — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Briefings', url_for('briefings_list')), (subject.name, url_for('briefing_detail', briefing_id=briefing.id)), ('Log outcome', none)]) }}{% endblock %}
 {% block content %}
-<h1>Review outcome for {{ contact.name }}</h1>
-<p class="muted">Check and edit before saving. This will log a new interaction{% if company %}, and update {{ company.name }}'s description if you keep the company update below{% endif %}.</p>
+<h1>Review outcome for {{ subject.name }}</h1>
+<p class="muted">Check and edit before saving. This will log a new interaction on {{ subject.name }}'s page{% if company %}, and update {{ company.name }}'s description if you keep the company update below{% endif %}.</p>
 
 <div class="card">
 <form method="post" action="{{ url_for('confirm_briefing_outcome', briefing_id=briefing.id) }}" class="stacked-form">

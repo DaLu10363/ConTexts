@@ -4,18 +4,28 @@
 {% block breadcrumbs %}{{ macros.breadcrumbs([('Briefings', url_for('briefings_list')), ('New briefing', none)]) }}{% endblock %}
 {% block content %}
 <h1>Prepare a briefing</h1>
-<p class="muted">Pick who you're about to talk to and why. Claude will pull their history from the database, look up recent public information on them and their company, and draft a briefing for you to review before it's saved.</p>
+<p class="muted">Pick who you're about to talk to — a contact person, or a company as a whole — and why. Claude will pull their history from the database, look up recent public information, and draft a briefing for you to review before it's saved.</p>
 
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
 <div class="card">
 <form method="post" class="stacked-form">
-    <label>Contact
-        <select name="contact_id" required>
-            <option value="">— select —</option>
-            {% for c in contacts %}
-            <option value="{{ c.id }}" {% if fields and fields.contact_id == c.id|string %}selected{% endif %}>{{ c.name }}{% if c.company %} ({{ c.company }}){% endif %}</option>
-            {% endfor %}
+    {% set current_subject = fields.subject if fields else '' %}
+    <label>Briefing with
+        <select name="subject" required>
+            <option value="">— select a contact or company —</option>
+            <optgroup label="Contacts">
+                {% for c in contacts %}
+                {% set value = 'contact:' ~ c.id %}
+                <option value="{{ value }}" {% if current_subject == value %}selected{% endif %}>{{ c.name }}{% if c.company %} ({{ c.company }}){% endif %}</option>
+                {% endfor %}
+            </optgroup>
+            <optgroup label="Companies">
+                {% for co in companies %}
+                {% set value = 'company:' ~ co.id %}
+                <option value="{{ value }}" {% if current_subject == value %}selected{% endif %}>{{ co.name }}</option>
+                {% endfor %}
+            </optgroup>
         </select>
     </label>
     <label>Related idea (optional)

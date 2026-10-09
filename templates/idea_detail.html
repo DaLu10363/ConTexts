@@ -3,9 +3,19 @@
 {% block title %}{{ idea.title }} — ConTexts{% endblock %}
 {% block breadcrumbs %}{{ macros.breadcrumbs([('Ideas', url_for('ideas_list')), (idea.title, none)]) }}{% endblock %}
 {% block content %}
-<h1>{{ idea.title }}</h1>
+<div class="button-row" style="justify-content: space-between;">
+    <h1>{{ idea.title }}</h1>
+    <div class="button-row">
+        <form method="post" action="{{ url_for('suggest_idea_fit', idea_id=idea.id) }}">
+            <button type="submit" title="Scores every contact against this idea's domain and values">Fill gaps with Claude</button>
+        </form>
+        <a href="{{ url_for('idea_edit', idea_id=idea.id) }}" class="btn-ghost">Edit</a>
+    </div>
+</div>
+{% if fit_error %}<p class="error">{{ fit_error }}</p>{% endif %}
 <p class="muted">Status: {{ idea.status }}</p>
 {% if idea.description %}<p>{{ idea.description }}</p>{% endif %}
+<p class="muted">"Fill gaps with Claude" scores every contact in your database against this idea's domain and values — not just general role fit. Useful for surfacing a mismatch, e.g. a social-justice-focused investor being a poor fit for a defense/weapons idea even if they score well as "Investor".</p>
 
 <section class="card">
     <h2>Linked contacts</h2>
@@ -43,11 +53,28 @@
 </section>
 
 <section class="card">
-    <h2>Values/domain fit across all contacts</h2>
-    {% if fit_error %}<p class="error">{{ fit_error }}</p>{% endif %}
-    <p class="muted">Scores every contact in your database against this idea's domain and values — not just general role fit. Useful for surfacing a mismatch, e.g. a social-justice-focused investor being a poor fit for a defense/weapons idea even if they score well as "Investor".</p>
-    <form method="post" action="{{ url_for('suggest_idea_fit', idea_id=idea.id) }}">
-        <button type="submit">Fill gaps with Claude</button>
+    <h2>Linked companies</h2>
+    <ul class="plain-list">
+        {% for co in linked_companies %}
+        <li><a href="{{ url_for('company_detail', company_id=co.id) }}">{{ co.name }}</a>
+            {% if co.role_note %}<span class="muted"> — {{ co.role_note }}</span>{% endif %}</li>
+        {% else %}
+        <li class="muted">No companies linked yet.</li>
+        {% endfor %}
+    </ul>
+
+    {% if all_companies %}
+    <form method="post" action="{{ url_for('link_idea_company', idea_id=idea.id) }}" class="stacked-form">
+        <label>Company
+            <select name="company_id" required>
+                {% for co in all_companies %}
+                <option value="{{ co.id }}">{{ co.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Role / note<input type="text" name="role_note"></label>
+        <button type="submit" class="btn-ghost">Link company</button>
     </form>
+    {% endif %}
 </section>
 {% endblock %}

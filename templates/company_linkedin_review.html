@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}Review LinkedIn page — {{ company.name }} — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Companies', url_for('companies_list')), (company.name, url_for('company_detail', company_id=company.id)), ('Review LinkedIn page', none)]) }}{% endblock %}
+{% block content %}
+<h1>Review {{ company.name }}'s LinkedIn page</h1>
+<p class="muted">Claude's reading of the pasted page. The parsed details are stored as the company's LinkedIn profile; edit the fields below before they replace the company's facts.</p>
+
+<div class="card">
+    <h2>Parsed</h2>
+    {% if profile.tagline %}<p><em>{{ profile.tagline }}</em></p>{% endif %}
+    <ul class="plain-list">
+        {% if profile.company_size %}<li>Size: {{ profile.company_size }}</li>{% endif %}
+        {% if profile.headquarters %}<li>Headquarters: {{ profile.headquarters }}</li>{% endif %}
+        {% if profile.founded %}<li>Founded: {{ profile.founded }}</li>{% endif %}
+        {% if profile.locations %}<li>Locations: {{ profile.locations | join('; ') }}</li>{% endif %}
+        {% if profile.specialties %}<li>Specialties: {{ profile.specialties | join(', ') }}</li>{% endif %}
+    </ul>
+</div>
+
+<div class="card">
+<form method="post" action="{{ url_for('confirm_company_linkedin', company_id=company.id) }}" class="stacked-form">
+    <input type="hidden" name="profile_json" value="{{ profile_json }}">
+    <input type="hidden" name="linkedin_text" value="{{ linkedin_text }}">
+    {% set industry = profile.industry or company.industry %}
+    <label>Website<input type="url" name="website" value="{{ profile.website or company.website or '' }}"></label>
+    <label>Industry
+        <select name="industry">
+            <option value="">— none —</option>
+            {% for opt in industry_options %}
+            <option value="{{ opt }}" {% if industry == opt %}selected{% endif %}>{{ opt }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <label>Description<textarea name="description" rows="5">{{ company.description or profile.overview }}</textarea></label>
+    {% if company.description %}
+    <p class="muted">Kept your existing description. LinkedIn's overview: {{ profile.overview }}</p>
+    {% endif %}
+    <div class="button-row">
+        <button type="submit">Save</button>
+        <a href="{{ url_for('company_detail', company_id=company.id) }}" class="btn-ghost">Cancel</a>
+    </div>
+</form>
+</div>
+{% endblock %}

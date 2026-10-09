@@ -8,6 +8,9 @@ CREATE TABLE IF NOT EXISTS companies (
     description TEXT,
     website TEXT,
     industry TEXT,
+    linkedin_raw_text TEXT,
+    profile_data TEXT,
+    profile_parsed_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -53,10 +56,12 @@ CREATE TABLE IF NOT EXISTS contact_nodes (
     PRIMARY KEY (contact_id, node_id)
 );
 
--- Timestamped notes/logs captured after a call or meeting
+-- Timestamped notes/logs captured after a call or meeting - with a contact
+-- person, or with a company as a whole (exactly one of the two is set)
 CREATE TABLE IF NOT EXISTS interactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    contact_id INTEGER REFERENCES contacts(id) ON DELETE CASCADE,
+    company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE,
     occurred_at TEXT NOT NULL,
     summary TEXT NOT NULL,
     next_steps TEXT,
@@ -65,7 +70,8 @@ CREATE TABLE IF NOT EXISTS interactions (
     tone TEXT,
     analysis_rationale TEXT,
     analyzed_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    CHECK (contact_id IS NOT NULL OR company_id IS NOT NULL)
 );
 
 -- Business/project ideas, linked to the contacts relevant to pursuing them
@@ -90,6 +96,14 @@ CREATE TABLE IF NOT EXISTS idea_contacts (
     PRIMARY KEY (idea_id, contact_id)
 );
 
+-- Links a company to an idea, parallel to idea_contacts
+CREATE TABLE IF NOT EXISTS idea_companies (
+    idea_id INTEGER NOT NULL REFERENCES ideas(id) ON DELETE CASCADE,
+    company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    role_note TEXT,
+    PRIMARY KEY (idea_id, company_id)
+);
+
 -- Per-node breakdown of a contact's fit for a specific idea (distinct from
 -- the contact's general contact_nodes score - "good Investor fit in general"
 -- vs "good Investor fit for THIS idea specifically")
@@ -111,13 +125,14 @@ INSERT OR IGNORE INTO nodes (name, description) VALUES
     ('Contributor/Contractor', 'Executes defined work on a contract basis');
 
 -- Meeting/communication prep, parallel to the main database: the user
--- states an upcoming contact + purpose, Claude researches (DB + web search)
+-- states an upcoming contact (or company) + purpose, Claude researches (DB + web search)
 -- and produces a reviewable briefing; after the meeting, raw outcome notes
 -- are turned into a logged interaction and, where relevant, folded into the
 -- linked company's description.
 CREATE TABLE IF NOT EXISTS briefings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    contact_id INTEGER REFERENCES contacts(id) ON DELETE CASCADE,
+    company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE,
     idea_id INTEGER REFERENCES ideas(id) ON DELETE SET NULL,
     purpose TEXT,
     format TEXT,
@@ -134,7 +149,8 @@ CREATE TABLE IF NOT EXISTS briefings (
     outcome_summary TEXT,
     interaction_id INTEGER REFERENCES interactions(id) ON DELETE SET NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    CHECK (contact_id IS NOT NULL OR company_id IS NOT NULL)
 );
 
 -- Pre-meeting/during-meeting checklist for a briefing, mixing Claude-proposed

@@ -1,13 +1,18 @@
 {% extends "base.html" %}
 {% import "_macros.html" as macros %}
 {% block title %}Review interaction — ConTexts{% endblock %}
-{% block breadcrumbs %}{{ macros.breadcrumbs([('Contacts', url_for('contacts_list')), (contact.name, url_for('contact_detail', contact_id=contact.id)), ('Review interaction', none)]) }}{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([(subject.section, subject.list_url), (subject.name, subject.url), ('Review interaction', none)]) }}{% endblock %}
 {% block content %}
-<h1>Review interaction with {{ contact.name }}</h1>
+<h1>Review interaction with {{ subject.name }}</h1>
+{% if analysis_error %}
+<p class="error">{{ analysis_error }}</p>
+<p class="muted">You can still save this note — add tags and tone yourself if you like.</p>
+{% else %}
 <p class="muted">Claude's analysis of this note. Check it, edit anything wrong, then save.</p>
+{% endif %}
 
 <div class="card">
-<form method="post" action="{{ url_for('confirm_interaction', contact_id=contact.id) }}" class="stacked-form">
+<form method="post" action="{{ confirm_url }}" class="stacked-form">
     <label>Date<input type="date" name="occurred_at" value="{{ fields.occurred_at }}"></label>
     <label>What was discussed<textarea name="summary" rows="3" required>{{ fields.summary }}</textarea></label>
     <label>Next steps<textarea name="next_steps" rows="2">{{ fields.next_steps }}</textarea></label>

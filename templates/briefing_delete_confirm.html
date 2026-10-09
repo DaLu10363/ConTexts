@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% import "_macros.html" as macros %}
 {% block title %}Delete briefing — ConTexts{% endblock %}
-{% block breadcrumbs %}{{ macros.breadcrumbs([('Briefings', url_for('briefings_list')), (contact.name, url_for('briefing_detail', briefing_id=briefing.id)), ('Delete', none)]) }}{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Briefings', url_for('briefings_list')), (subject.name, url_for('briefing_detail', briefing_id=briefing.id)), ('Delete', none)]) }}{% endblock %}
 {% block content %}
-<h1>Delete this briefing for {{ contact.name }}?</h1>
+<h1>Delete this briefing for {{ subject.name }}?</h1>
 <p class="error">This permanently deletes the briefing and cannot be undone. Any interaction already logged from its outcome is kept.</p>
 <form method="post" class="button-row">
     <button type="submit" class="btn-danger">Yes, delete permanently</button>

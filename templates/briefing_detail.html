@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% import "_macros.html" as macros %}
-{% block title %}Briefing — {{ contact.name }} — ConTexts{% endblock %}
-{% block breadcrumbs %}{{ macros.breadcrumbs([('Briefings', url_for('briefings_list')), (contact.name, none)]) }}{% endblock %}
+{% block title %}Briefing — {{ subject.name }} — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([('Briefings', url_for('briefings_list')), (subject.name, none)]) }}{% endblock %}
 {% block content %}
 <div class="button-row" style="justify-content: space-between;">
-    <h1>Briefing: {{ contact.name }}</h1>
+    <h1>Briefing: {{ subject.name }}</h1>
     <a href="{{ url_for('delete_briefing', briefing_id=briefing.id) }}" class="btn-danger">Delete briefing</a>
 </div>
 <p class="muted">
@@ -13,21 +13,23 @@
     {% if briefing.format %} &middot; {{ briefing.format }}{% endif %}
     {% if briefing.scheduled_at %} &middot; {{ briefing.scheduled_at }}{% endif %}
 </p>
-<p><a href="{{ url_for('contact_detail', contact_id=contact.id) }}">{{ contact.name }}</a>
+<p><a href="{{ subject.url }}">{{ subject.name }}</a>
+    {% if contact and company %} at <a href="{{ url_for('company_detail', company_id=company.id) }}">{{ company.name }}</a>{% endif %}
+    {% if not contact %}<span class="muted">(company briefing)</span>{% endif %}
     {% if idea %} &middot; re: <a href="{{ url_for('idea_detail', idea_id=idea.id) }}">{{ idea.title }}</a>{% endif %}
 </p>
 
 {% if briefing.summary %}<p>{{ briefing.summary }}</p>{% endif %}
 
 <section class="card">
-    <h2>About the contact</h2>
+    <h2>{{ 'About the contact' if contact else 'Key people' }}</h2>
     <ul class="plain-list">
         {% for item in contact_highlights %}<li>{{ item }}</li>{% else %}<li class="muted">None.</li>{% endfor %}
     </ul>
 </section>
 
 <section class="card">
-    <h2>About their company</h2>
+    <h2>{{ 'About their company' if contact else 'About the company' }}</h2>
     <ul class="plain-list">
         {% for item in company_highlights %}<li>{{ item }}</li>{% else %}<li class="muted">None.</li>{% endfor %}
     </ul>
@@ -92,7 +94,7 @@
     <h2>Outcome</h2>
     {% if briefing.outcome_summary %}<p>{{ briefing.outcome_summary }}</p>{% endif %}
     {% if briefing.outcome_notes %}<p class="muted">Raw notes: {{ briefing.outcome_notes }}</p>{% endif %}
-    {% if briefing.interaction_id %}<p class="muted">Logged as an interaction on this contact's page.</p>{% endif %}
+    {% if briefing.interaction_id %}<p class="muted">Logged as an interaction on <a href="{{ subject.url }}">{{ subject.name }}</a>'s page.</p>{% endif %}
 </section>
 {% else %}
 <section class="card">

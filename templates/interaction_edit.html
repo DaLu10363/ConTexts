@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}Edit interaction — ConTexts{% endblock %}
+{% block breadcrumbs %}{{ macros.breadcrumbs([(subject.section, subject.list_url), (subject.name, subject.url), ('Edit interaction', none)]) }}{% endblock %}
+{% block content %}
+<h1>Edit interaction with {{ subject.name }}</h1>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<div class="card">
+<form method="post" class="stacked-form">
+    <label>Date<input type="date" name="occurred_at" value="{{ interaction.occurred_at }}"></label>
+    <label>What was discussed<textarea name="summary" rows="3" required>{{ interaction.summary }}</textarea></label>
+    <label>Next steps<textarea name="next_steps" rows="2">{{ interaction.next_steps or '' }}</textarea></label>
+    <label>Topic tags<input type="text" name="topic_tags" value="{{ topic_tags_text }}"></label>
+    <label>Tone<input type="text" name="tone" value="{{ interaction.tone or '' }}"></label>
+    <label>Rationale<textarea name="rationale" rows="2">{{ interaction.analysis_rationale or '' }}</textarea></label>
+
+    <div class="button-row">
+        <button type="submit">Save changes</button>
+        <a href="{{ subject.url }}" class="btn-ghost">Cancel</a>
+    </div>
+</form>
+</div>
+{% endblock %}
